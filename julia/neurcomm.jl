@@ -399,6 +399,9 @@ function Flux.Data.DataLoader(d::RandomData; batchsize=1)
     [d.generator(batchsize)]
 end
 
+function (d::RandomData)(n)
+    d.generator(n)
+end
 
 
 
