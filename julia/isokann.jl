@@ -152,7 +152,7 @@ include("neurcomm.jl")
 
 #data = NN.sampletrajectories(NN.Triplewell(), 100, 10, dt = 0.01, steps=10)
 
-function eulermarujamatrajectories(x0::Matrix, potential::Function, sigma::Real, dt::Real, steps::Integer; branches::Integer=1)
+function eulermarujamatrajectories(x0::Matrix, potential::Function, sigma::Real, dt::Real, steps::Integer; branches::Integer=1, maxdelta=Inf)
     dim, samples = size(x0)
     xts = similar(x0, dim, steps+1, branches, samples)
     for s in 1:samples
@@ -161,7 +161,11 @@ function eulermarujamatrajectories(x0::Matrix, potential::Function, sigma::Real,
             xts[:, 1, b, s] = x
             for t in 2:steps+1
                 g = Zygote.gradient(potential, x)[1]
-                x .+= -g * dt .+ sigma * randn(dim) * sqrt(dt)
+                if sum(abs2, g * dt) > maxdelta
+                    x = eulermarujamatrajectories(reshape(x, length(x), 1), potential, sigma, dt/10, 10, maxdelta=maxdelta)[:, end, 1, 1]
+                else
+                    x .+= -g * dt .+ sigma * randn(dim) * sqrt(dt)
+                end
                 xts[:, t, b, s] = x
             end
         end
