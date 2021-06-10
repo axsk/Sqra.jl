@@ -53,6 +53,12 @@ function _voronoi_adjacency(X, tolerance=1e-6)
     return N, v
 end
 
+#= since below idea seems to be hard, we will probably go with voronoi above on the
+subset of edegs who are close enough, maybe something like 2*max min dist, from the picking.
+or d = median(sort(dists, dims=2))[n] where n is the number of expected neighbours in dimension d.
+
+=#
+
 #=
 # test for implementing a better scaling version of the lp
 # the main idea is to use shadow costs, or the sensivity of the obj wrt to the bcs
