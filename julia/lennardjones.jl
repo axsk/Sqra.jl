@@ -1,4 +1,4 @@
-using Base: @locals
+using Base: @locals, NamedTuple
 using StatsBase
 using Plots: limsType
 using Distances
@@ -186,19 +186,19 @@ function run(;
     potential(x) = lennard_jones_potential(x; epsilon=epsilon, sigma=r0, harm=harm)
     x = eulermarujamatrajectories(x0, potential, sigma, dt, nsteps, maxdelta=maxdelta)[:,:,1,1]
 
-    picks, pdist = pick(x, npicks)
+    @time picks, pdist = pick(x, npicks)
+	@show "picked"
     classes = classify(picks)
 
     u = potential(picks)
     cutoff!(u, cutoff)
 
     A = threshold_adjacency(pdist, neigh)
-    check_connected(A)
 
     Q = sqra(u, A, beta)
 
     c = try
-        solve_committor(Q, classes)[1]
+        @time solve_committor(Q, classes)[1]
     catch
         nothing
     end
@@ -227,7 +227,7 @@ function threshold_adjacency(pdist, avg_neighbor)
     t = d[(avg_neighbor+1) * size(pdist, 1)]
     @info "distance threshold is $t"
     A = sparse(0 .< pdist .<= t)
-
+	check_connected(A)
     return A
 end
 
@@ -252,7 +252,8 @@ function solve_committor(Q, classes)
             end
         end
     end
-    return QQ \ b, QQ, b
+	@time c = QQ \ b
+    return c, QQ, b
 end
 
 macro extract(d)
@@ -278,3 +279,20 @@ end
 # visualisations
 # diffusion maps
 # orthogolan distances
+
+function convergence_error(r::NamedTuple, ns)
+	errors = []
+	for n in ns
+		let u = r.u[1:n],
+			pdist = r.pdist[1:n, 1:n],
+			classes = r.classes[1:n]
+
+			@show size(pdist)
+			A = threshold_adjacency(pdist, r.neigh)
+			Q = sqra(u, A, r.beta)
+			c = solve_committor(Q, classes)[1]
+			push!(errors, mean(abs2, c - r.c[1:n]))
+		end
+	end
+	errors
+end
