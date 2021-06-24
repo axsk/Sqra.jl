@@ -89,7 +89,7 @@ function analyse(xx)
     end
     display(p)
 
-    plot(classify(xx)')
+    #plot(classify(xx))
 end
 
 function snapshot(v::Vector)
@@ -102,6 +102,29 @@ function snapshot(v::Vector)
     #scatter!([v[5]], [v[6]])
     xlims!(-1,2)
     ylims!(-1,2)
+end
+
+function plot_trajectories(x; kwargs...)
+	d, n = size(x)
+	scatter(x[1:2:d,:]', x[2:2:d,:]'; kwargs...)
+end
+
+function plot_triangle!(t; kwargs...)
+	plot!([t[1:2:end]; t[1]], [t[2:2:end];t[2]]; kwargs...)
+end
+
+function plot_triangles(x; line_z, kwargs...)
+	d, n = size(x)
+	for i in 1:n
+		c = try line_z[i] catch nothing end
+		plot_triangle!(x[:,i]; line_z=c, kwargs...)
+	end
+	plot!()
+end
+
+function plot_normalized(x, c)
+	plot_trajectories(normalform(x),alpha=0.5, legend=false)
+	plot_triangles(normalform(x), alpha=0.3, line_z = c, legend=false, seriescolor=:roma)
 end
 
 function findrand(x, class, maxiter=10000)
@@ -127,7 +150,10 @@ function normalform(x)
            0 1]
     A   =  E / B
     reshape(A * x, length(x))
+end
 
+function normalform(x::Matrix)
+	mapslices(normalform, x, dims=1)
 end
 
 ## we have so far:
@@ -190,6 +216,10 @@ function cutoff!(u, cutoff)
     end
 end
 
+function append_symmetric_points(x)
+	#x = [[0,]]
+end
+
 """ compute the adjacency by thresholding pdist such that
 on avg. the prescribed no. of neighbours is assigned """
 function threshold_adjacency(pdist, avg_neighbor)
@@ -231,9 +261,20 @@ macro extract(d)
            ex = :($ex; try global $k=$v catch end)
        end; eval(ex); $d
     )
-    end
+end
 
 ## great, running so far
 ## next steps:
 ## convergence check
 ## visualizations
+
+
+## now convergence
+# compute committor for finer and finer grids
+# then compute average distance between c_i and c_end on given points (weighted with pi?)
+
+# instead of convergence we could also look at convergence of eigenfuns (note the symmetry though)
+
+# visualisations
+# diffusion maps
+# orthogolan distances
