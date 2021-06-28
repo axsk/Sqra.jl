@@ -14,5 +14,5 @@ function picking(X, n)
 		push!(qs, q)
 	end
 
-	return X[:, qs], qs, d
+	return X[:, qs], qs, sqrt.(d)
 end

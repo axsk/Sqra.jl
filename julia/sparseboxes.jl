@@ -12,18 +12,35 @@ function spboxes(points::Matrix, ncells, boundary=autoboundary(points))
     # and adjust for left boundary
     cartesians[normalized.==0] .= 1
 
-    cartesians = unique(cartesians, dims=2)
+    cartesians, assignments = uniquecoldict(cartesians)
 
 	dims = repeat([ncells], size(points, 1))
 	lininds = to_linearinds(cartesians, dims)
 	A = boxneighbors(lininds, dims)
 
-    cartesians, A #, sparse(A)
+	centers = boxcenters(cartesians, boundary, ncells)
+
+    centers, A, cartesians, assignments #, sparse(A)
+end
+
+function uniquecoldict(x)
+	n = size(x, 2)
+	ua = Dict{Any, Vector{Int}}()
+	for i in 1:n
+		ua[x[:,i]] = push!(get(ua, x[:,i], Int[]), i)
+	end
+	return reduce(hcat, keys(ua)), ua
 end
 
 function autoboundary(x)
     hcat(minimum(x, dims=2), maximum(x, dims=2))
 end
+
+function boxcenters(cartesians, boundary, ncells)
+	delta = (boundary[:,2]-boundary[:,1])
+	return (cartesians .- 1/2)  .* delta ./ (ncells) .+ boundary[:,1]
+end
+
 
 function test_spboxes()
     x = [0 0.5 0
@@ -33,13 +50,15 @@ function test_spboxes()
 end
 
 
-""" given a sorted list of linear indices and the resective dimension of the grid
+""" given a list of linear indices and the resective dimension of the grid
 compute the neighbors by seraching for each possible (forward) neighbor.
 we can reduce the search by starting at buffered positions from the preceding check
 """
-	function boxneighbors(lininds, dims)
+function boxneighbors(lininds, dims)
+	perm = sortperm(lininds)
+	lininds = lininds[perm]
 	pointers = ones(Int, length(dims))
-	@show offsets = cumprod([1;dims[1:end-1]])
+	offsets = cumprod([1;dims[1:end-1]])
 	n = length(lininds)
 	cart = CartesianIndices(tuple(dims...))
 	A = spzeros(length(lininds), length(lininds))
@@ -65,7 +84,7 @@ we can reduce the search by starting at buffered positions from the preceding ch
 			end
 		end
 	end
-	return A
+	return A[invperm(perm), invperm(perm)]
 end
 
 function to_linearinds(cartinds, dims)

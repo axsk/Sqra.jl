@@ -6,6 +6,8 @@ using LinearAlgebra
 using PyCall
 using Statistics
 
+include("picking.jl")
+
 pack(coords::Matrix) = vec(coords)
 unpack(coords::Vector) = reshape(coords, 2, div(length(coords),2))
 
@@ -46,10 +48,11 @@ include("isokann.jl")
 cmd = pyimport("cmdtools")
 
 function pick(traj::Matrix, n)
-    pypi = cmd.estimation.picking_algorithm.picking_algorithm
-    p = pypi(traj', n)
-    picks = p[1]' |> collect
-    dists = p[3][p[2].+1,:]
+    #pypi = cmd.estimation.picking_algorithm.picking_algorithm
+    #p = pypi(traj', n)
+	p = picking(traj,n)
+    picks = p[1]
+    dists = p[3][p[2],:]
     return picks, sqrt.(dists)
 end
 
@@ -105,21 +108,13 @@ function snapshot(v::Vector)
 end
 
 function plot_trajectories(x; kwargs...)
-	d, n = size(x)
-	scatter(x[1:2:d,:]', x[2:2:d,:]'; kwargs...)
+	scatter!(x[1:2:end,:]', x[2:2:end,:]'; kwargs...)
 end
 
-function plot_triangle!(t; kwargs...)
-	plot!([t[1:2:end]; t[1]], [t[2:2:end];t[2]]; kwargs...)
-end
-
-function plot_triangles(x; line_z, kwargs...)
-	d, n = size(x)
-	for i in 1:n
-		c = try line_z[i] catch nothing end
-		plot_triangle!(x[:,i]; line_z=c, kwargs...)
-	end
-	plot!()
+function plot_triangles!(n; kwargs...)
+	xs = [n[1:2:end,:]; n[[1],:]]
+	ys = [n[2:2:end,:]; n[[2],:]]
+	plot!(xs, ys; kwargs...)
 end
 
 function plot_normalized(x, c)
@@ -156,6 +151,14 @@ function normalform(x::Matrix)
 	mapslices(normalform, x, dims=1)
 end
 
+function mutual_distances(x::Matrix)
+	d1 = sum(abs2, x[1:2,:] .- x[3:4,:], dims=1)
+	d2 = sum(abs2, x[3:4,:] .- x[5:6,:], dims=1)
+	d3 = sum(abs2, x[5:6,:] .- x[1:2,:], dims=1)
+	[d1; d2; d3]
+end
+
+
 ## we have so far:
 ### EM sampling of LJ trajectories
 
@@ -168,9 +171,15 @@ end
 include("sqra.jl")
 
 const x0sym = reshape([-1/2, -1/2, 1/2, -1/2, 1/2, 0], 6, 1)
+const x0gen =  reshape([  0.19920158482463968
+0.13789462153196408
+-0.1709575705426315
+0.0784533378749835
+0.06778720715969005
+-0.2112155752270007], 6,1)
 
 function run(;
-    x0 = x0sym,
+    x0 = x0gen,
     epsilon = 1,
     r0 = 1/3,
     harm = 1,
@@ -186,8 +195,7 @@ function run(;
     potential(x) = lennard_jones_potential(x; epsilon=epsilon, sigma=r0, harm=harm)
     x = eulermarujamatrajectories(x0, potential, sigma, dt, nsteps, maxdelta=maxdelta)[:,:,1,1]
 
-    @time picks, pdist = pick(x, npicks)
-	@show "picked"
+    picks, pdist = pick(x, npicks)
     classes = classify(picks)
 
     u = potential(picks)
@@ -198,7 +206,7 @@ function run(;
     Q = sqra(u, A, beta)
 
     c = try
-        @time solve_committor(Q, classes)[1]
+        solve_committor(Q, classes)[1]
     catch
         nothing
     end
@@ -225,7 +233,7 @@ on avg. the prescribed no. of neighbours is assigned """
 function threshold_adjacency(pdist, avg_neighbor)
     d = sort(pdist[:])
     t = d[(avg_neighbor+1) * size(pdist, 1)]
-    @info "distance threshold is $t"
+    println("distance threshold is $t")
     A = sparse(0 .< pdist .<= t)
 	check_connected(A)
     return A
@@ -252,7 +260,7 @@ function solve_committor(Q, classes)
             end
         end
     end
-	@time c = QQ \ b
+	c = QQ \ b
     return c, QQ, b
 end
 
@@ -295,4 +303,9 @@ function convergence_error(r::NamedTuple, ns)
 		end
 	end
 	errors
+end
+
+function diffusionmaps(x, n=3; alpha=1,sigma=1)
+	D = cmd.estimation.diffusionmaps.DiffusionMaps(x', sigma, alpha, n=n)
+	return D.dms
 end
