@@ -20,8 +20,7 @@ function sqra(u::Vector, A::SparseMatrixCSC, beta::Real)
         q[n] = exp(v[J[n]] - v[I[n]]) * a[n]
     end
     Q = sparse(I, J, q)
-    Q = Q - spdiagm(diag(Q)) # remove diagonal
-    Q = Q - spdiagm(sum(Q, dims=2)|>vec) # rowsum 0
+    Q = fixdiagonal(Q)
 end
 
 function adjacency(dims)
@@ -33,6 +32,43 @@ function adjacency(dims)
         push!(k, kron(x...))
     end
     sum(k)
+end
+
+function fixdiagonal(Q)
+	Q = Q - spdiagm(diag(Q)) # remove diagonal
+    Q = Q - spdiagm(sum(Q, dims=2)|>vec) # rowsum 0
+	return Q
+end
+
+function prune_Q(Q, lim)
+	pinds = zeros(Bool, size(Q, 1))
+
+	# keep only small outbound rates
+	pinds[-lim .< diag(Q) .< 0] .= 1
+
+	noutbound = size(Q,1)-sum(pinds)
+	println("pruned $noutbound large outbound rates")
+
+	# prune unconnceted cells
+	while true
+		QQ = Q[pinds, pinds]
+		QQ = QQ - Diagonal(QQ)
+
+		rem = (sum(QQ, dims=1)|>vec .== 0)
+		pinds[findall(pinds)[rem]] .= 0
+
+	 	(sum(rem) == 0) && break
+	end
+
+	nunconn = size(Q,1) - sum(noutbound) - sum(pinds)
+	println("pruned $nunconn states without incoming rates")
+
+
+	Q[pinds, pinds]
+
+	Q = Q[pinds, pinds]
+	Q = fixdiagonal(Q)
+	return Q, pinds
 end
 
 #=

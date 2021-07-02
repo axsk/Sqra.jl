@@ -1,5 +1,6 @@
 using Distances
 using SparseArrays
+using ProgressMeter
 
 spboxes(points::Vector, args...) = spboxes(reshape(points, (1, length(points))), args...)
 
@@ -12,16 +13,68 @@ function spboxes(points::Matrix, ncells, boundary=autoboundary(points))
     # and adjust for left boundary
     cartesians[normalized.==0] .= 1
 
-    cartesians, assignments = uniquecoldict(cartesians)
+    cartesians, neigh_inds = uniquecoldict(cartesians)
+
+	inside = all(1 .<= cartesians .<= ncells, dims=1) |> vec
+	cartesians = cartesians[:, inside]
+	neigh_inds = neigh_inds[inside]
+
+	@show size(normalized, 2),  sum(inside)
 
 	dims = repeat([ncells], size(points, 1))
 	lininds = to_linearinds(cartesians, dims)
 	A = boxneighbors(lininds, dims)
 
-	centers = boxcenters(cartesians, boundary, ncells)
 
-    centers, A, cartesians, assignments #, sparse(A)
+
+	A, cartesians, neigh_inds #, sparse(A)
 end
+
+function sparseboxpick(points::AbstractMatrix, ncells, potentials, boundary=autoboundary(points))
+	n, m = size(points)
+	#affine transformation of boundary box onto the unit cube ( ncells)
+    normalized = (points .- boundary[:,1]) ./ (boundary[:,2] - boundary[:,1]) * ncells
+
+	cartesians = ceil.(Int, normalized)  # round to next int
+    cartesians[normalized.==0] .= 1  # and adjust for left boundary
+
+	order=[]
+
+	# select the (index of) the point with lowest potential for each cartesian box
+	pickdict = Dict{typeof(cartesians[:,1]), Int}()
+	@showprogress "sparse box picking" for i in 1:m
+		c = cartesians[:,i]
+		!inside(c, ncells) && continue  # skip over outside boxes
+		best = get(pickdict, cartesians[:,i], nothing)
+		if best === nothing
+			pickdict[c] = i
+			push!(order, i)
+		elseif potentials[i] < potentials[best]
+			pickdict[c] = i
+		end
+	end
+
+	picks = values(pickdict) |> collect
+
+	A = boxneighbors(cartesians[:, picks], ncells)
+
+	@show length(picks)
+
+	return A, picks, order
+end
+
+inside(cart, ncells) = all(1 .<= cart .<= ncells)
+
+function boxneighbors(cartesians, ncells)
+	dims = [ncells for i in 1:size(cartesians, 1)]
+	lininds = to_linearinds(cartesians, dims)
+	A = _boxneighbors(lininds, dims)
+	return A
+end
+
+
+
+
 
 function uniquecoldict(x)
 	n = size(x, 2)
@@ -29,7 +82,7 @@ function uniquecoldict(x)
 	for i in 1:n
 		ua[x[:,i]] = push!(get(ua, x[:,i], Int[]), i)
 	end
-	return reduce(hcat, keys(ua)), ua
+	return reduce(hcat, keys(ua)), values(ua)|>collect
 end
 
 function autoboundary(x)
@@ -54,7 +107,7 @@ end
 compute the neighbors by seraching for each possible (forward) neighbor.
 we can reduce the search by starting at buffered positions from the preceding check
 """
-function boxneighbors(lininds, dims)
+function _boxneighbors(lininds, dims)
 	perm = sortperm(lininds)
 	lininds = lininds[perm]
 	pointers = ones(Int, length(dims))
@@ -62,7 +115,7 @@ function boxneighbors(lininds, dims)
 	n = length(lininds)
 	cart = CartesianIndices(tuple(dims...))
 	A = spzeros(length(lininds), length(lininds))
-	for (i, current) in enumerate(lininds)
+	@showprogress "collecting neighbours" for (i, current) in enumerate(lininds)
 		for dim in 1:length(dims)
 			target = current + offsets[dim]
 

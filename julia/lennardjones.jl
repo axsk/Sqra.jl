@@ -1,4 +1,4 @@
-using Base: @locals, NamedTuple
+using Base: @locals, NamedTuple, Integer
 using StatsBase
 using Plots: limsType
 using Distances
@@ -50,10 +50,9 @@ cmd = pyimport("cmdtools")
 function pick(traj::Matrix, n)
     #pypi = cmd.estimation.picking_algorithm.picking_algorithm
     #p = pypi(traj', n)
-	p = picking(traj,n)
-    picks = p[1]
-    dists = p[3][p[2],:]
-    return picks, sqrt.(dists)
+	picks, inds, dists = picking(traj,n)
+    dists = dists[inds,:]
+    return inds, sqrt.(dists)
 end
 
 function pickingdists(dists)
@@ -178,41 +177,6 @@ const x0gen =  reshape([  0.19920158482463968
 0.06778720715969005
 -0.2112155752270007], 6,1)
 
-function run(;
-    x0 = x0gen,
-    epsilon = 1,
-    r0 = 1/3,
-    harm = 1,
-    sigma = 1/2,
-    dt=0.001,
-    nsteps=100000,
-    maxdelta=0.1,
-    npicks=100,
-    neigh = 3*6,
-    cutoff = 3,
-    beta = sigma_to_beta(sigma),
-)
-    potential(x) = lennard_jones_potential(x; epsilon=epsilon, sigma=r0, harm=harm)
-    x = eulermarujamatrajectories(x0, potential, sigma, dt, nsteps, maxdelta=maxdelta)[:,:,1,1]
-
-    picks, pdist = pick(x, npicks)
-    classes = classify(picks)
-
-    u = potential(picks)
-    cutoff!(u, cutoff)
-
-    A = threshold_adjacency(pdist, neigh)
-
-    Q = sqra(u, A, beta)
-
-    c = try
-        solve_committor(Q, classes)[1]
-    catch
-        nothing
-    end
-
-    return Base.@locals
-end
 
 namedtuple(d::Dict) = (; d...)
 
@@ -308,4 +272,72 @@ end
 function diffusionmaps(x, n=3; alpha=1,sigma=1)
 	D = cmd.estimation.diffusionmaps.DiffusionMaps(x', sigma, alpha, n=n)
 	return D.dms
+end
+
+include("sparseboxes.jl")
+
+function sqra_sparse_boxes(traj::AbstractMatrix, us::AbstractVector, ncells::Integer, beta, boundary=autoboundary(traj))
+	@time A, picks = sparseboxpick(traj, ncells, us, boundary)
+	@time Q = sqra(us[picks], A, beta)
+
+	let fullsize = ncells^size(traj, 1), spsize = size(A,1)
+		println("sparsity: $spsize/$fullsize=$(spsize/fullsize)")
+	end
+
+	return Q, picks
+end
+
+
+function sqra_voronoi(traj, us, npicks, beta, average_neighbors = 3*size(traj,2))
+	inds, pdist = pick(traj, npicks) # also return picked indices
+	A = threshold_adjacency(pdist, average_neighbors)
+	Q = sqra(us[inds], A, beta)
+	return Q, inds
+end
+
+
+function Base.run(;
+    x0 = x0gen,
+    epsilon = 1,
+    r0 = 1/3,
+    harm = 1,
+    sigma = 1/2,
+    dt=0.001,
+    nsteps=100000,
+    maxdelta=0.1,
+    npicks=100,
+    neigh = 3*6,
+	method = :voronoi,
+	ncells = 6,
+	prune = 100,
+    beta = sigma_to_beta(sigma),
+	boundary = [-ones(6) ones(6)] .* 0.8
+)
+    potential(x) = lennard_jones_potential(x; epsilon=epsilon, sigma=r0, harm=harm)
+    x = eulermarujamatrajectories(x0, potential, sigma, dt, nsteps, maxdelta=maxdelta)[:,:,1,1]
+	us = potential(x)
+
+	if method == :voronoi
+		Q, inds = sqra_voronoi(x, us, npicks, beta, neigh)
+	else
+		Q, inds = sqra_sparse_boxes(x, us, ncells, beta, boundary )
+	end
+
+	#pinds = prune_inds_Q(Q, prune)
+	#Q = Q[pinds, pinds]
+
+	Q, pinds = prune_Q(Q, prune)
+	inds = inds[pinds]
+	picks = x[:, inds]
+	us = us[inds]
+
+	classes = classify(picks)
+    c = try
+		println("solving committor...")
+		#@time solve_committor(Q, classes)[1]
+    catch
+        nothing
+    end
+
+    return Base.@locals
 end
