@@ -18,7 +18,7 @@ lennard_jones_potential(x::Matrix; kwargs...) =
 lennard_jones_potential(coords::Vector; kwargs...) =
     lennard_jones_potential_unpacked(unpack(coords); kwargs...)
 
-function lennard_jones_potential_unpacked(particles::Matrix; sigma=1/4, epsilon=1, harm=1)
+function lennard_jones_potential_unpacked(particles; sigma=1/4, epsilon=1, harm=1)
     n, m = size(particles)
     #r = pairwise(PeriodicEuclidean(ones(n)), particles)
     r = pairwise(Euclidean(), particles)
@@ -34,6 +34,21 @@ function lennard_jones_potential_unpacked(particles::Matrix; sigma=1/4, epsilon=
     s += sum(abs2, (particles)) * harm
 
     return s
+end
+
+function lennard_jones_harmonic(x; sigma=1/4, epsilon=1, harm=1)
+    #@show x
+    x = reshape(x, 2, 3)
+    _, m = size(x)
+    u = 0.
+    for i in 1:m
+        u += sum(abs2, x[:,i]) * harm
+        for j in i+1:m
+            r = sigma^2 / sum(abs2, (x[:,i] .- x[:,j]))
+            u += 4*epsilon * (r^6 - r^3)
+        end
+    end
+    return u
 end
 
 #@time x=eulermarujamatrajectories(x0, x->lennard_jones_potential(x; epsilon=1/1, sigma=1/3, harm=1), 1/2, 0.001, 100000, maxdelta=0.1)
@@ -313,9 +328,14 @@ function Base.run(;
     beta = sigma_to_beta(sigma),
 	boundary = [-ones(6) ones(6)] .* 0.8
 )
-    potential(x) = lennard_jones_potential(x; epsilon=epsilon, sigma=r0, harm=harm)
-    x = eulermarujamatrajectories(x0, potential, sigma, dt, nsteps, maxdelta=maxdelta)[:,:,1,1]
-	us = potential(x)
+   
+    #potential(x) = lennard_jones_potential(x; epsilon=epsilon, sigma=r0, harm=harm)
+    #@time x = eulermarujamatrajectories(x0, potential, sigma, dt, nsteps, maxdelta=maxdelta)[:,:,1,1] 
+
+    potential(x) = lennard_jones_harmonic(x; epsilon=epsilon, sigma=r0, harm=harm)
+    @time x = eulermaruyama(x0 |> vec, potential, sigma, dt, nsteps, maxdelta=maxdelta)
+
+	us = mapslices(potential, x, dims=1)
 
 	if method == :voronoi
 		Q, inds = sqra_voronoi(x, us, npicks, beta, neigh)

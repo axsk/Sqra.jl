@@ -1,4 +1,5 @@
 using ProgressMeter
+using ForwardDiff
 
 function eulermarujamatrajectories(x0::Matrix, potential::Function, sigma::Real, dt::Real, steps::Integer; branches::Integer=1, maxdelta=Inf, progressbar=true)
     dim, samples = size(x0)
@@ -21,4 +22,29 @@ function eulermarujamatrajectories(x0::Matrix, potential::Function, sigma::Real,
         end
     end
     xts
+end
+
+
+function eulermaruyama(x0::AbstractVector, potential::Function, sigma::Real, dt::Real, steps::Integer; maxdelta=Inf, progressbar=true)
+    dim = length(x0)
+    p = Progress(steps; dt=1, desc="Euler Maruyama simulation", enabled=progressbar)
+
+    grad = similar(x0)
+    cfg = ForwardDiff.GradientConfig(potential, x0)
+
+    x = copy(x0)
+    xs = similar(x0, dim, steps+1)
+    xs[:, 1] = x
+
+    for t in 2:steps+1
+        ForwardDiff.gradient!(grad, potential, x, cfg)
+        if sum(abs2, grad * dt) > maxdelta
+            x = eulermaruyama(x, potential, sigma, dt/10, 10, maxdelta=maxdelta, progressbar=false)[:, end]
+        else
+            x .+= -grad * dt .+ sigma * randn(dim) * sqrt(dt)
+        end
+        xs[:, t] = x
+        next!(p)
+    end
+    return xs
 end
