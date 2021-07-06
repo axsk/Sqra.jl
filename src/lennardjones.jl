@@ -1,17 +1,17 @@
 using Base: @locals, NamedTuple, Integer
 using StatsBase
-using Plots: limsType
-using Distances
+using Plots
+#using Distances
 using LinearAlgebra
-using PyCall
+#using PyCall
 using Statistics
 
-include("picking.jl")
-include("sqra.jl")
-include("sparseboxes.jl")
-include("isokann.jl")
+#include("picking.jl")
+#include("sqra.jl")
+#include("sparseboxes.jl")
+#include("isokann.jl")
 
-cmd = pyimport("cmdtools")
+#cmd = pyimport("cmdtools")
 
 
 function Base.run(;
@@ -31,7 +31,7 @@ function Base.run(;
     beta = sigma_to_beta(sigma),
 	boundary = [-ones(6) ones(6)] .* 0.8
 )
-   
+
     potential(x) = lennard_jones_harmonic(x; epsilon=epsilon, sigma=r0, harm=harm)
     x = eulermaruyama(x0 |> vec, potential, sigma, dt, nsteps, maxdelta=maxdelta)
 
@@ -54,7 +54,7 @@ function Base.run(;
 	classes = classify(picks)
     c = try
 		println("solving committor...")
-		#@time solve_committor(Q, classes)[1]
+		#@time solve_committor(Q, classes)
     catch
         nothing
     end
@@ -64,21 +64,39 @@ end
 
 namedtuple(d::Dict) = (; d...)
 
+beta_to_sigma(beta) = sqrt(2/beta)
+sigma_to_beta(sigma) = 2 / sigma^2
+
 " solve the committor system where we encode A==1 and B as anything != 0 or 1"
-function solve_committor(Q, classes)
-    QQ = copy(Q)
+function committor_system(Q, classes)
+    #QQ = copy(Q)
+	QQ = sparse(Q') # we work on the transpose since csc column access is fast
     b = copy(classes)
     for i in 1:length(classes)
-        if b[i] != 0
-            QQ[i,:] .= 0
+        if b[i] != 0  # we have a boundary condition
+            QQ[:,i] .= 0
+			zerocol!(QQ, i)  # note that we work with the transpose
             QQ[i,i] = 1
-            if b[i] != 1
+            if b[i] != 1  # boundary is not 1
                 b[i] = 0
             end
         end
     end
-	c = QQ \ b
-    return c, QQ, b
+	QQ = sparse(QQ')
+	#c = QQ \ b
+
+    #return c, QQ, b
+	return QQ, b
+end
+
+function solve_committor(Q, classes)
+	QQ, b = committor_system(Q, classes)
+	return QQ \ b
+end
+
+# set column i of the CSRMatrix Q to 0
+function zerocol!(Q::SparseMatrixCSC, i)
+    Q.nzval[Q.colptr[i]:Q.colptr[i+1]-1] .= 0
 end
 
 function convergence_error(r::NamedTuple, ns)
@@ -247,7 +265,7 @@ macro extract(d)
     )
 end
 
-### Diffusion Maps 
+### Diffusion Maps
 function diffusionmaps(x, n=3; alpha=1,sigma=1)
 	D = cmd.estimation.diffusionmaps.DiffusionMaps(x', sigma, alpha, n=n)
 	return D.dms

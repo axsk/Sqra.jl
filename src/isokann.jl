@@ -148,11 +148,11 @@ end
 
 # ------- lets tackle the tripplewell ------- #
 
-include("neurcomm.jl")
+#include("neurcomm.jl")
 
 #data = NN.sampletrajectories(NN.Triplewell(), 100, 10, dt = 0.01, steps=10)
 
-include("eulermaruyama.jl")
+#include("eulermaruyama.jl")
 
 beta_to_sigma(beta) = sqrt(2/beta)
 sigma_to_beta(sigma) = 2 / sigma^2

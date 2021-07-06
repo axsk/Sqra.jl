@@ -482,4 +482,4 @@ hyperwell(x) = 0.1*sum((x.^2 .-1).^2, dims=1)
 
 end # module
 
-using Main.NN
+using .NN

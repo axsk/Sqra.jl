@@ -135,7 +135,7 @@ function testruns(
     neig, time
 end
 
-include("cmdtools.jl")
+#include("cmdtools.jl")
 using StatsBase
 hist(x) = fit(Histogram, x, minimum(x):1:maximum(x))
 
