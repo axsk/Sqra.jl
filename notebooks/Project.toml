@@ -1,6 +1,7 @@
 [deps]
 Arpack = "7d9fca2a-8960-54d3-9f78-7d1dccf2cb97"
 IterativeSolvers = "42fd0dbc-a981-5370-80f2-aaf504508153"
+Parameters = "d96e819e-fc66-5662-9728-84c9c7592b0a"
 PlotlyBase = "a03496cd-edff-5a9b-9e67-9cda94a718b5"
 SparseMatricesCSR = "a0a7dd2c-ebf4-11e9-1f05-cf50bc540ca1"
 Sqra = "561b40b7-a0ab-4084-b14c-be45599a2ca9"

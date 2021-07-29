@@ -744,7 +744,7 @@ uuid = "276daf66-3868-5448-9aa4-cd146d93841b"
 version = "1.5.1"
 
 [[Sqra]]
-deps = ["Clp", "Distances", "ForwardDiff", "IterativeSolvers", "JuMP", "LinearAlgebra", "Memoize", "Plots", "ProgressMeter", "Random", "SparseArrays", "Statistics", "StatsBase"]
+deps = ["Clp", "Distances", "ForwardDiff", "IterativeSolvers", "JuMP", "LinearAlgebra", "Memoize", "Parameters", "Plots", "ProgressMeter", "Random", "SparseArrays", "Statistics", "StatsBase"]
 path = ".."
 uuid = "561b40b7-a0ab-4084-b14c-be45599a2ca9"
 version = "0.1.0"

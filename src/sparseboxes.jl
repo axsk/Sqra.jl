@@ -5,13 +5,7 @@ using ProgressMeter
 spboxes(points::Vector, args...) = spboxes(reshape(points, (1, length(points))), args...)
 
 function spboxes(points::Matrix, ncells, boundary=autoboundary(points))
-    #affine transformation of boundary box onto the unit cube ( ncells)
-    normalized = (points .- boundary[:,1]) ./ (boundary[:,2] - boundary[:,1]) * ncells
-
-    # round to next int
-	cartesians = ceil.(Int, normalized)
-    # and adjust for left boundary
-    cartesians[normalized.==0] .= 1
+	cartesians = cartesiancoords(points, ncells, boundary)
 
     cartesians, neigh_inds = uniquecoldict(cartesians)
 
@@ -26,19 +20,22 @@ function spboxes(points::Matrix, ncells, boundary=autoboundary(points))
 	A = boxneighbors(lininds, dims)
 
 
-
 	A, cartesians, neigh_inds #, sparse(A)
 end
 
-function sparseboxpick(points::AbstractMatrix, ncells, potentials, boundary=autoboundary(points))
-	n, m = size(points)
-	#affine transformation of boundary box onto the unit cube ( ncells)
-    normalized = (points .- boundary[:,1]) ./ (boundary[:,2] - boundary[:,1]) * ncells
-
+function cartesiancoords(points, ncells, boundary=autoboundary(points))
+	#affine transformation of boundary box onto the unit cube (ncells)
+	normalized = (points .- boundary[:,1]) ./ (boundary[:,2] - boundary[:,1]) * ncells
 	cartesians = ceil.(Int, normalized)  # round to next int
     cartesians[normalized.==0] .= 1  # and adjust for left boundary
+	return cartesians
+end
 
-	order=[]
+
+function sparseboxpick(points::AbstractMatrix, ncells, potentials, boundary=autoboundary(points))
+	n, m = size(points)
+	cartesians = cartesiancoords(points, ncells, boundary)
+	#order=[]
 
 	# select the (index of) the point with lowest potential for each cartesian box
 	pickdict = Dict{typeof(cartesians[:,1]), Int}()
@@ -48,7 +45,7 @@ function sparseboxpick(points::AbstractMatrix, ncells, potentials, boundary=auto
 		best = get(pickdict, cartesians[:,i], nothing)
 		if best === nothing
 			pickdict[c] = i
-			push!(order, i)
+			#push!(order, i)
 		elseif potentials[i] < potentials[best]
 			pickdict[c] = i
 		end
@@ -56,11 +53,12 @@ function sparseboxpick(points::AbstractMatrix, ncells, potentials, boundary=auto
 
 	picks = values(pickdict) |> collect
 
+
 	A = boxneighbors(cartesians[:, picks], ncells)
 
 	@show length(picks)
 
-	return A, picks, order
+	return A, picks
 end
 
 inside(cart, ncells) = all(1 .<= cart .<= ncells)

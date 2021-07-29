@@ -1,46 +1,159 @@
 using Base: @locals, NamedTuple, Integer
 using StatsBase
 using Plots
-#using Distances
 using LinearAlgebra
-#using PyCall
 using Statistics
+using Parameters
 
-#include("picking.jl")
-#include("sqra.jl")
-#include("sparseboxes.jl")
-#include("isokann.jl")
+import Base.run
 
-#cmd = pyimport("cmdtools")
+@with_kw struct Simulation
+	x0 = x0gen
+	epsilon = 1
+    r0 = 1/3
+    harm = 1
+    sigma = 1/2
+    dt=0.001
+    nsteps=100000
+    maxdelta=0.1
+	x=nothing
+	u=nothing
+end
+
+function run(params::Simulation)
+	@unpack_Simulation params
+
+	potential(x) = lennard_jones_harmonic(x; epsilon=epsilon, sigma=r0, harm=harm)
+
+	x = eulermaruyama(x0 |> vec, potential, sigma, dt, nsteps, maxdelta=maxdelta)
+	u = mapslices(potential, x, dims=1) |> vec
+
+	@pack_Simulation
+end
+
+@with_kw mutable struct VoronoiDiscretization
+	prune = 100
+	npicks = 100
+	neigh = 3*6
+	Q = nothing
+	inds = nothing
+	picks = nothing
+	u = nothing
+end
+
+@with_kw mutable struct SpBoxDiscretisation
+	prune = 100
+	ncells = 6
+	boundary = [-ones(6) ones(6)] .* 0.8
+	Q = nothing
+	inds = nothing
+	picks = nothing
+	u = nothing
+	cartesians = nothing
+end
+
+
+sqra(d::SpBoxDiscretisation, x, u, beta) = sqra_sparse_boxes(x, u, d.ncells, beta, d.boundary)
+sqra(d::VoronoiDiscretization, x, u, beta) = sqra_voronoi(x, u, d.npicks, beta, d.neigh)
+
+function discretize(discretization, sim::Simulation)
+	@unpack x, u, sigma = sim
+	@unpack prune = discretization
+	sigma = sim.sigma
+	beta = sigma_to_beta(sigma)
+
+	#@unpack_SpBoxDiscretisation params
+	#Q, inds = sqra_sparse_boxes(x, u, ncells, beta, boundary)
+
+	Q, inds = sqra(discretization, x, u, beta)
+
+	Q, pinds = prune_Q(Q, prune)
+	inds = inds[pinds]
+	picks = x[:, inds]
+	u = u[inds]
+
+	if isa(discretization,SpBoxDiscretisation)
+		cartesians = cartesiancoords(picks, discretization.ncells, discretization.boundary)
+		@pack! discretization = cartesians
+	end
+
+	@pack! discretization = Q, inds, picks, u
+	return discretization
+end
+
+#=
+
+function discretize(params::VoronoiDiscretization, sim::Simulation)
+	@unpack x, u = sim
+	sigma = sim.sigma
+	@unpack_VoronoiDiscretization params
+
+	beta = sigma_to_beta(sigma)
+	Q, inds = sqra_voronoi(x, u, npicks, beta, neigh)
+
+	Q, pinds = prune_Q(Q, prune)
+	inds = inds[pinds]
+	picks = x[:, inds]
+	u = u[inds]
+	cartesians = cartesiancoords(picks, ncells, boundary)
+
+	@pack_DiscretisationResult
+end
+=#
+
+function discretize(x, u;
+	npicks=100,
+    neigh = 3*6,
+	method = :voronoi,
+	ncells = 6,
+	prune = 100,
+	boundary = [-ones(6) ones(6)] .* 0.8)
+
+	beta = sigma_to_beta(sigma)
+	if method == :voronoi
+		Q, inds = sqra_voronoi(x, u, npicks, beta, neigh)
+	else
+		Q, inds = sqra_sparse_boxes(x, u, ncells, beta, boundary)
+	end
+
+	Q, pinds = prune_Q(Q, prune)
+	inds = inds[pinds]
+	picks = x[:, inds]
+	cartesians = cartesiancoords(picks, ncells, boundary)
+	u = u[inds]
+
+	return Q, picks, cartesians, u
+end
+
+
+
+
 
 
 function Base.run(;
-    x0 = x0gen,
-    epsilon = 1,
-    r0 = 1/3,
-    harm = 1,
     sigma = 1/2,
-    dt=0.001,
-    nsteps=100000,
-    maxdelta=0.1,
     npicks=100,
     neigh = 3*6,
 	method = :voronoi,
 	ncells = 6,
 	prune = 100,
     beta = sigma_to_beta(sigma),
-	boundary = [-ones(6) ones(6)] .* 0.8
+	boundary = [-ones(6) ones(6)] .* 0.8,
+	kwargs...
 )
 
-    potential(x) = lennard_jones_harmonic(x; epsilon=epsilon, sigma=r0, harm=harm)
-    x = eulermaruyama(x0 |> vec, potential, sigma, dt, nsteps, maxdelta=maxdelta)
+	x, us = simulate(;kwargs...)
 
-	us = mapslices(potential, x, dims=1) |> vec
+
+    #potential(x) = lennard_jones_harmonic(x; epsilon=epsilon, sigma=r0, harm=harm)
+    #x = eulermaruyama(x0 |> vec, potential, sigma, dt, nsteps, maxdelta=maxdelta)
+
+	#us = mapslices(potential, x, dims=1) |> vec
 
 	if method == :voronoi
 		Q, inds = sqra_voronoi(x, us, npicks, beta, neigh)
 	else
-		Q, inds = sqra_sparse_boxes(x, us, ncells, beta, boundary )
+		Q, inds = sqra_sparse_boxes(x, us, ncells, beta, boundary)
 	end
 
 	#pinds = prune_inds_Q(Q, prune)
@@ -49,17 +162,18 @@ function Base.run(;
 	Q, pinds = prune_Q(Q, prune)
 	inds = inds[pinds]
 	picks = x[:, inds]
+	cartesians = cartesiancoords(picks, ncells, boundary)
 	us = us[inds]
 
 	classes = classify(picks)
     c = try
-		println("solving committor...")
+		#println("solving committor...")
 		#@time solve_committor(Q, classes)
     catch
         nothing
     end
 
-    return namedtuple(Base.@locals)
+    return merge(namedtuple(Base.@locals), kwargs)
 end
 
 namedtuple(d::Dict) = (; d...)
@@ -86,18 +200,51 @@ function committor_system(Q, classes)
 	#c = QQ \ b
 
     #return c, QQ, b
-	return QQ, b
+	return QQ, Float64.(b)
 end
 
-function solve_committor(Q, classes)
-	QQ, b = committor_system(Q, classes)
-	return QQ \ b
+@enum CommittorSolver begin
+	direct
+	lsqr
+	lsmr
+	gmres
+	idrs
 end
+
+using IterativeSolvers
+
+function solve_committor(Q, classes, solver=direct, maxiter=100000)
+	QQ, b = committor_system(Q, classes)
+	if solver == direct
+		try
+			return QQ \ b
+		catch e
+			println("Could not solve the committor system directly: $e")
+			return zero(b)
+		end
+	else solver == lsqr
+		solver = eval(:(IterativeSolvers.$(Symbol(string(solver)))))
+		return solver(QQ, b; maxiter=maxiter)
+	end
+end
+
+using SparseArrays
 
 # set column i of the CSRMatrix Q to 0
+# basically the same as `Q[:,i] .= 0`, but way faster
 function zerocol!(Q::SparseMatrixCSC, i)
     Q.nzval[Q.colptr[i]:Q.colptr[i+1]-1] .= 0
 end
+
+function test_zerocol!()
+	n=10000
+	x = sprand(n,n,.01)
+	y = copy(x)
+	@time y[:,1] .= 0
+	@time zerocol!(x, 1)
+	@assert x == y
+end
+
 
 function convergence_error(r::NamedTuple, ns)
 	errors = []
