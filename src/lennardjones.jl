@@ -4,8 +4,12 @@ using Plots
 using LinearAlgebra
 using Statistics
 using Parameters
-
+using SparseArrays
 import Base.run
+import IterativeSolvers
+
+
+### System simulation
 
 @with_kw struct Simulation
 	x0 = x0gen
@@ -31,8 +35,11 @@ function run(params::Simulation)
 	@pack_Simulation
 end
 
+
+### Discretization
+
 @with_kw mutable struct VoronoiDiscretization
-	prune = 100
+	prune = Inf
 	npicks = 100
 	neigh = 3*6
 	Q = nothing
@@ -42,7 +49,7 @@ end
 end
 
 @with_kw mutable struct SpBoxDiscretisation
-	prune = 100
+	prune = Inf
 	ncells = 6
 	boundary = [-ones(6) ones(6)] .* 0.8
 	Q = nothing
@@ -51,7 +58,6 @@ end
 	u = nothing
 	cartesians = nothing
 end
-
 
 sqra(d::SpBoxDiscretisation, x, u, beta) = sqra_sparse_boxes(x, u, d.ncells, beta, d.boundary)
 sqra(d::VoronoiDiscretization, x, u, beta) = sqra_voronoi(x, u, d.npicks, beta, d.neigh)
@@ -81,105 +87,49 @@ function discretize(discretization, sim::Simulation)
 	return discretization
 end
 
-#=
-
-function discretize(params::VoronoiDiscretization, sim::Simulation)
-	@unpack x, u = sim
-	sigma = sim.sigma
-	@unpack_VoronoiDiscretization params
-
-	beta = sigma_to_beta(sigma)
-	Q, inds = sqra_voronoi(x, u, npicks, beta, neigh)
-
-	Q, pinds = prune_Q(Q, prune)
-	inds = inds[pinds]
-	picks = x[:, inds]
-	u = u[inds]
-	cartesians = cartesiancoords(picks, ncells, boundary)
-
-	@pack_DiscretisationResult
-end
-=#
-
-function discretize(x, u;
-	npicks=100,
-    neigh = 3*6,
-	method = :voronoi,
-	ncells = 6,
-	prune = 100,
-	boundary = [-ones(6) ones(6)] .* 0.8)
-
-	beta = sigma_to_beta(sigma)
-	if method == :voronoi
-		Q, inds = sqra_voronoi(x, u, npicks, beta, neigh)
-	else
-		Q, inds = sqra_sparse_boxes(x, u, ncells, beta, boundary)
-	end
-
-	Q, pinds = prune_Q(Q, prune)
-	inds = inds[pinds]
-	picks = x[:, inds]
-	cartesians = cartesiancoords(picks, ncells, boundary)
-	u = u[inds]
-
-	return Q, picks, cartesians, u
-end
-
-
-
-
-
-
-function Base.run(;
-    sigma = 1/2,
-    npicks=100,
-    neigh = 3*6,
-	method = :voronoi,
-	ncells = 6,
-	prune = 100,
-    beta = sigma_to_beta(sigma),
-	boundary = [-ones(6) ones(6)] .* 0.8,
-	kwargs...
-)
-
-	x, us = simulate(;kwargs...)
-
-
-    #potential(x) = lennard_jones_harmonic(x; epsilon=epsilon, sigma=r0, harm=harm)
-    #x = eulermaruyama(x0 |> vec, potential, sigma, dt, nsteps, maxdelta=maxdelta)
-
-	#us = mapslices(potential, x, dims=1) |> vec
-
-	if method == :voronoi
-		Q, inds = sqra_voronoi(x, us, npicks, beta, neigh)
-	else
-		Q, inds = sqra_sparse_boxes(x, us, ncells, beta, boundary)
-	end
-
-	#pinds = prune_inds_Q(Q, prune)
-	#Q = Q[pinds, pinds]
-
-	Q, pinds = prune_Q(Q, prune)
-	inds = inds[pinds]
-	picks = x[:, inds]
-	cartesians = cartesiancoords(picks, ncells, boundary)
-	us = us[inds]
-
-	classes = classify(picks)
-    c = try
-		#println("solving committor...")
-		#@time solve_committor(Q, classes)
-    catch
-        nothing
-    end
-
-    return merge(namedtuple(Base.@locals), kwargs)
-end
-
-namedtuple(d::Dict) = (; d...)
-
 beta_to_sigma(beta) = sqrt(2/beta)
 sigma_to_beta(sigma) = 2 / sigma^2
+
+
+### Committor computation
+
+function committor(discretization, method = idr, maxiter=1000)
+	@unpack Q, picks = discretization
+    cl = classify(picks)
+
+	A, b = committor_system(Q, cl)
+
+	c = solver(A, b, method, maxiter)
+
+	res = sqrt(sum(abs2, A*c - b))
+	println("Committor residual: ", res)
+
+	return c
+end
+
+
+@enum CommittorSolver begin
+	direct
+	lsqr
+	lsmr
+	gmres
+	idrs
+end
+
+function solver(A, b, method, maxiter)
+	if method == direct
+		try
+			c = A \ b
+		catch e
+			println("Could not solve the committor system directly: $e")
+			c = fill(NaN, size(b))
+		end
+	else
+		f = eval(:(IterativeSolvers.$(Symbol(string(method)))))
+		c = f(A, b; maxiter=maxiter)
+	end
+	return c
+end
 
 " solve the committor system where we encode A==1 and B as anything != 0 or 1"
 function committor_system(Q, classes)
@@ -203,32 +153,6 @@ function committor_system(Q, classes)
 	return QQ, Float64.(b)
 end
 
-@enum CommittorSolver begin
-	direct
-	lsqr
-	lsmr
-	gmres
-	idrs
-end
-
-using IterativeSolvers
-
-function solve_committor(Q, classes, solver=direct, maxiter=100000)
-	QQ, b = committor_system(Q, classes)
-	if solver == direct
-		try
-			return QQ \ b
-		catch e
-			println("Could not solve the committor system directly: $e")
-			return zero(b)
-		end
-	else solver == lsqr
-		solver = eval(:(IterativeSolvers.$(Symbol(string(solver)))))
-		return solver(QQ, b; maxiter=maxiter)
-	end
-end
-
-using SparseArrays
 
 # set column i of the CSRMatrix Q to 0
 # basically the same as `Q[:,i] .= 0`, but way faster
@@ -236,8 +160,7 @@ function zerocol!(Q::SparseMatrixCSC, i)
     Q.nzval[Q.colptr[i]:Q.colptr[i+1]-1] .= 0
 end
 
-function test_zerocol!()
-	n=10000
+function test_zerocol!(n=10000)
 	x = sprand(n,n,.01)
 	y = copy(x)
 	@time y[:,1] .= 0

@@ -44,10 +44,10 @@ function prune_Q(Q, lim)
 	pinds = zeros(Bool, size(Q, 1))
 
 	# keep only small outbound rates
-	pinds[-lim .< diag(Q) .< 0] .= 1
+	pinds[-lim .< diag(Q) .< 0] .= 1    # TODO: handle .= 0 below
 
 	noutbound = size(Q,1)-sum(pinds)
-	println("pruned $noutbound large outbound rates")
+	println("pruned $noutbound large outbound rates / unconnecteds")
 
 	# prune unconnceted cells
 	while true
