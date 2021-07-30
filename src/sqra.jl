@@ -2,6 +2,7 @@ module Sqra
 
 
 #include("cmdtools.jl")
+using Plots: right
 using StatsBase: params
 include("eulermaruyama.jl")
 #include("isokann.jl")

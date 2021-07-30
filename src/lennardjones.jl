@@ -93,13 +93,26 @@ sigma_to_beta(sigma) = 2 / sigma^2
 
 ### Committor computation
 
-function committor(discretization, method = idr, maxiter=1000)
+function committor(discretization, method = idr; maxiter=1000, precondition=false)
 	@unpack Q, picks = discretization
     cl = classify(picks)
 
 	A, b = committor_system(Q, cl)
+	#=
 
-	c = solver(A, b, method, maxiter)
+	if precondition == :left
+		Pinv =  inv(Diagonal(A))
+		c = solver(Pinv*A, collect(Pinv*b), method, maxiter)
+	elseif precondition == :right
+		Pinv =  inv(Diagonal(A))
+		y = solver(A*Pinv, b, method, maxiter)
+		c = Pinv * y
+	else
+		c = solver(A, b, method, maxiter)
+	end
+	=#
+
+	c = IterativeSolvers.gmres(A, b; maxiter=maxiter, Pl=Diagonal(A))
 
 	res = sqrt(sum(abs2, A*c - b))
 	println("Committor residual: ", res)
@@ -117,6 +130,8 @@ end
 end
 
 function solver(A, b, method, maxiter)
+
+
 	if method == direct
 		try
 			c = A \ b
@@ -126,8 +141,14 @@ function solver(A, b, method, maxiter)
 		end
 	else
 		f = eval(:(IterativeSolvers.$(Symbol(string(method)))))
-		c = f(A, b; maxiter=maxiter)
+		c = try
+			f(A, b; maxiter=maxiter)#, Pl = Diagonal(A))
+		catch
+			println("z")
+			zero(b)
+		end
 	end
+
 	return c
 end
 
