@@ -15,7 +15,7 @@ function batch(; nsteps=100_000, levels=3:14)
 	Random.seed!(0)
 
 	# simulate trajectory
-	sim = Sqra.run(Sqra.Simulation(nsteps=nsteps, sigma=.5, maxdelta=0.01))
+	sim = Sqra.run_parallel(Sqra.Simulation(nsteps=nsteps, sigma=.5, maxdelta=0.01))
 
 	# compute discretizations
 	n = length(levels)
@@ -64,6 +64,19 @@ end
     maxdelta=0.1
 	x=nothing
 	u=nothing
+end
+
+function run_parallel(sim::Simulation; copies=48, seeds=1:copies)
+	sim = Simulation(nsteps = cld(sim.nsteps, copies))
+	results = Array{Simulation}(undef, copies)
+	Threads.@threads for i in 1:copies
+		Random.seed!(seeds[i])
+		results[i] = run(sim)
+	end
+
+	return Sqra.Simulation(sim, nsteps = sim.nsteps*8,
+		x = mapreduce(x->x.x, hcat, results),
+		u = mapreduce(x->x.u, vcat, results))
 end
 
 function run(params::Simulation)
