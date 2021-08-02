@@ -7,7 +7,49 @@ using Parameters
 using SparseArrays
 import Base.run
 import IterativeSolvers
+using Random
+using JLD2
 
+
+function batch(; nsteps=100_000, levels=3:14)
+	Random.seed!(0)
+
+	# simulate trajectory
+	sim = Sqra.run(Sqra.Simulation(nsteps=nsteps, sigma=.5, maxdelta=0.01))
+
+	# compute discretizations
+	n = length(levels)
+	ds = Array{Any}(undef, n)
+	cs = Array{Any}(undef, n)
+
+
+	Threads.@threads for i in 1:n
+		ncells = levels[i]
+		r = Sqra.discretize(Sqra.SpBoxDiscretisation(ncells=ncells), sim)
+		c = Sqra.committor(r)
+		ds[i] = r
+		cs[i] = c
+
+		jldsave("$ncells.jld2"; r, c)
+	end
+
+	# compute errors
+	_c = cs[end]
+	_carts = ds[end].cartesians
+	_ncells = ds[end].ncells
+
+	errs = Array{Any}(undef, n)
+
+	Threads.@threads for i in 1:n
+		c = cs[i]
+		carts = ds[i].cartesians
+		ncells = ds[i].ncells
+
+		errs[i] = Sqra.sp_mse(c, _c, carts, _carts, ncells,  _ncells)
+	end
+
+	return sim, ds, cs, errs
+end
 
 ### System simulation
 
@@ -93,26 +135,24 @@ sigma_to_beta(sigma) = 2 / sigma^2
 
 ### Committor computation
 
-function committor(discretization, method = idr; maxiter=1000, precondition=false)
+function committor(discretization, method = idrs; maxiter=1000, precondition=false)
 	@unpack Q, picks = discretization
     cl = classify(picks)
 
 	A, b = committor_system(Q, cl)
-	#=
 
-	if precondition == :left
-		Pinv =  inv(Diagonal(A))
-		c = solver(Pinv*A, collect(Pinv*b), method, maxiter)
-	elseif precondition == :right
-		Pinv =  inv(Diagonal(A))
-		y = solver(A*Pinv, b, method, maxiter)
-		c = Pinv * y
-	else
-		c = solver(A, b, method, maxiter)
-	end
+	c = copy(b)
+
+	#=
+	beta = 8
+	stat = exp.(-beta * discretization.u)
+
+	P = Diagonal(stat)
 	=#
 
-	c = IterativeSolvers.gmres(A, b; maxiter=maxiter, Pl=Diagonal(A))
+	P = Diagonal(A)
+
+	IterativeSolvers.gmres!(c, A, b; maxiter=maxiter, Pl=P)
 
 	res = sqrt(sum(abs2, A*c - b))
 	println("Committor residual: ", res)
