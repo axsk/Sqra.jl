@@ -63,16 +63,15 @@ end
     dt=0.001
     nsteps=100000
     maxdelta=0.1
+	seed = 1
 	x=nothing
 	u=nothing
 end
 
 @memoize PermaDict(Dict(), "cache/sim_") function run_parallel(sim::Simulation; copies=Threads.nthreads(), seeds=1:copies)
-	sim = Simulation(nsteps = cld(sim.nsteps, copies))
 	results = Array{Simulation}(undef, copies)
 	Threads.@threads for i in 1:copies
-		Random.seed!(seeds[i])
-		results[i] = run(sim)
+		results[i] = run(Simulation(sim, nsteps = cld(sim.nsteps, copies), seed = seeds[i]))
 	end
 
 	return Sqra.Simulation(sim, nsteps = sim.nsteps*8,
@@ -83,6 +82,7 @@ end
 function run(params::Simulation)
 	@unpack_Simulation params
 
+	Random.seed!(seed)
 	potential(x) = lennard_jones_harmonic(x; epsilon=epsilon, sigma=r0, harm=harm)
 
 	x = eulermaruyama(x0 |> vec, potential, sigma, dt, nsteps, maxdelta=maxdelta)
