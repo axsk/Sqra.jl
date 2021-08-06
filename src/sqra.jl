@@ -5,6 +5,7 @@ module Sqra
 using Plots: right
 using StatsBase: params
 include("eulermaruyama.jl")
+include("permadict.jl")
 #include("isokann.jl")
 #include("metasgd.jl")
 #include("molly.jl")

@@ -9,6 +9,7 @@ import Base.run
 import IterativeSolvers
 using Random
 using JLD2
+using Memoize
 
 
 function batch(; nsteps=100_000, levels=3:14)
@@ -66,7 +67,7 @@ end
 	u=nothing
 end
 
-function run_parallel(sim::Simulation; copies=48, seeds=1:copies)
+@memoize PermaDict(Dict(), "cache/sim_") function run_parallel(sim::Simulation; copies=Threads.nthreads(), seeds=1:copies)
 	sim = Simulation(nsteps = cld(sim.nsteps, copies))
 	results = Array{Simulation}(undef, copies)
 	Threads.@threads for i in 1:copies
@@ -93,7 +94,7 @@ end
 
 ### Discretization
 
-@with_kw mutable struct VoronoiDiscretization
+@with_kw struct VoronoiDiscretization
 	prune = Inf
 	npicks = 100
 	neigh = 3*6
@@ -103,7 +104,7 @@ end
 	u = nothing
 end
 
-@with_kw mutable struct SpBoxDiscretisation
+@with_kw struct SpBoxDiscretisation
 	prune = Inf
 	ncells = 6
 	boundary = [-ones(6) ones(6)] .* 0.8
@@ -114,10 +115,13 @@ end
 	cartesians = nothing
 end
 
+#Base.hash(x::SpBoxDiscretisation, y::UInt64) =   hash(map(z->getfield(x, z), fieldnames(typeof(x))), y)
+#Base.hash(x::VoronoiDiscretization, y::UInt64) = hash(map(z->getfield(x, z), fieldnames(typeof(x))), y)
+
 sqra(d::SpBoxDiscretisation, x, u, beta) = sqra_sparse_boxes(x, u, d.ncells, beta, d.boundary)
 sqra(d::VoronoiDiscretization, x, u, beta) = sqra_voronoi(x, u, d.npicks, beta, d.neigh)
 
-function discretize(discretization, sim::Simulation)
+@memoize PermaDict(Dict(), "cache/dis_") function discretize(discretization, sim::Simulation)
 	@unpack x, u, sigma = sim
 	@unpack prune = discretization
 	sigma = sim.sigma
@@ -135,10 +139,12 @@ function discretize(discretization, sim::Simulation)
 
 	if isa(discretization,SpBoxDiscretisation)
 		cartesians = cartesiancoords(picks, discretization.ncells, discretization.boundary)
-		@pack! discretization = cartesians
+		#@pack! discretization = cartesians
+		discretization = SpBoxDiscretisation(cartesians = cartesians)
 	end
 
-	@pack! discretization = Q, inds, picks, u
+	#@pack! discretization = Q, inds, picks, u
+	discretization = typeof(discretization)(discretization, Q=Q, inds=inds, picks=picks, u=u)
 	return discretization
 end
 
