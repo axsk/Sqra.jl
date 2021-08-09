@@ -71,13 +71,19 @@ end
 
 function run_parallel(sim::Simulation; copies=Threads.nthreads(), seeds=1:copies)
 	results = Array{Simulation}(undef, copies)
+	batch = cld(sim.nsteps, copies)
+
+	x = Array{Float64}(undef, length(sim.x0), batch * copies)
+	u = Array{Float64}(undef, batch * copies)
+
 	Threads.@threads for i in 1:copies
-		results[i] = run(Simulation(sim, nsteps = cld(sim.nsteps, copies), seed = seeds[i]))
+		results[i] = run(Simulation(sim, nsteps = batch, seed = seeds[i]))
+
+		x[:, (i-1)*batch + 1 : i*batch] = results[i].x[:, 1:batch]
+		u[(i-1)*batch + 1 : i*batch] = results[i].u[1:batch]
 	end
 
-	return Sqra.Simulation(sim,
-		x = mapreduce(x->x.x, hcat, results),
-		u = mapreduce(x->x.u, vcat, results))
+	return Sqra.Simulation(sim, x = x, u = u)
 end
 
 @memoize PermaDict(Dict(), "cache/sim_") function run(params::Simulation)
