@@ -39,7 +39,8 @@ function sparseboxpick(points::AbstractMatrix, ncells, potentials, boundary=auto
 
 	# select the (index of) the point with lowest potential for each cartesian box
 	pickdict = Dict{typeof(cartesians[:,1]), Int}()
-	@showprogress "sparse box picking" for i in 1:m
+	#@showprogress "sparse box picking"
+	for i in 1:m
 		c = cartesians[:,i]
 		!inside(c, ncells) && continue  # skip over outside boxes
 		best = get(pickdict, cartesians[:,i], nothing)
@@ -56,7 +57,7 @@ function sparseboxpick(points::AbstractMatrix, ncells, potentials, boundary=auto
 
 	A = boxneighbors(cartesians[:, picks], ncells)
 
-	@show length(picks)
+	#@show length(picks)
 
 	return A, picks
 end
@@ -113,7 +114,8 @@ function _boxneighbors(lininds, dims)
 	n = length(lininds)
 	cart = CartesianIndices(tuple(dims...))
 	A = spzeros(length(lininds), length(lininds))
-	@showprogress "collecting neighbours" for (i, current) in enumerate(lininds)
+	#@showprogress "collecting neighbours"
+	for (i, current) in enumerate(lininds)
 		for dim in 1:length(dims)
 			target = current + offsets[dim]
 

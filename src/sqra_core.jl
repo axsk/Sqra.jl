@@ -47,7 +47,7 @@ function prune_Q(Q, lim)
 	pinds[-lim .< diag(Q) .< 0] .= 1    # TODO: handle .= 0 below
 
 	noutbound = size(Q,1)-sum(pinds)
-	println("pruned $noutbound large outbound rates / unconnecteds")
+	#println("pruned $noutbound large outbound rates / unconnecteds")
 
 	# prune unconnceted cells
 	while true
@@ -61,7 +61,7 @@ function prune_Q(Q, lim)
 	end
 
 	nunconn = size(Q,1) - sum(noutbound) - sum(pinds)
-	println("pruned $nunconn states without incoming rates")
+	#println("pruned $nunconn states without incoming rates")
 
 
 	Q[pinds, pinds]

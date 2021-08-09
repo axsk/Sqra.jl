@@ -1,4 +1,5 @@
 using FileIO
+using Logging
 
 struct PermaDict{T}
 	d::T
@@ -13,17 +14,17 @@ end
 
 function Base.get!(f, d::PermaDict, k)
 	if haskey(d.d, k)
-		println("found cached entry")
+		@info("found cached entry")
 		v = d.d[k]
 	else
 		fn = d.prefix * string(mhash(k)) * ".jld2"
 		if isfile(fn)
-			println("found saved entry")
+			@info("found saved entry")
 			v = load(fn, "output")
 		else
 			v = f()
 			save(fn, "input", k, "output", v)
-			println("saved new entry")
+			@info("saved new entry")
 		end
 		d.d[k] = v
 	end

@@ -68,7 +68,7 @@ end
 	u=nothing
 end
 
-@memoize PermaDict(Dict(), "cache/sim_") function run_parallel(sim::Simulation; copies=Threads.nthreads(), seeds=1:copies)
+function run_parallel(sim::Simulation; copies=Threads.nthreads(), seeds=1:copies)
 	results = Array{Simulation}(undef, copies)
 	Threads.@threads for i in 1:copies
 		results[i] = run(Simulation(sim, nsteps = cld(sim.nsteps, copies), seed = seeds[i]))
@@ -79,7 +79,7 @@ end
 		u = mapreduce(x->x.u, vcat, results))
 end
 
-function run(params::Simulation)
+@memoize PermaDict(Dict(), "cache/sim_") function run(params::Simulation)
 	@unpack_Simulation params
 
 	Random.seed!(seed)
@@ -271,12 +271,12 @@ end
 ### Sparse Boxes
 
 function sqra_sparse_boxes(traj::AbstractMatrix, us::AbstractVector, ncells::Integer, beta, boundary=autoboundary(traj))
-	@time A, picks = sparseboxpick(traj, ncells, us, boundary)
-	@time Q = sqra(us[picks], A, beta)
+	A, picks = sparseboxpick(traj, ncells, us, boundary)
+	Q = sqra(us[picks], A, beta)
 
-	let fullsize = ncells^size(traj, 1), spsize = size(A,1)
-		println("sparsity: $spsize/$fullsize=$(spsize/fullsize)")
-	end
+	#let fullsize = ncells^size(traj, 1), spsize = size(A,1)
+	#	println("sparsity: $spsize/$fullsize=$(spsize/fullsize)")
+	#end
 
 	return Q, picks
 end
