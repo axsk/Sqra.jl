@@ -12,11 +12,11 @@ using JLD2
 using Memoize
 
 
-function batch(; nsteps=100_000, levels=3:14)
+function batch(sim=Simulation(); copies=Threads.nthreads(), levels=3:14)
 	Random.seed!(0)
 
 	# simulate trajectory
-	sim = Sqra.run_parallel(Sqra.Simulation(nsteps=nsteps, sigma=.5, maxdelta=0.01))
+	sim = Sqra.run_parallel(sim, copies=copies)
 
 	# compute discretizations
 	n = length(levels)
