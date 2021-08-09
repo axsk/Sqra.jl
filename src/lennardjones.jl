@@ -26,12 +26,12 @@ function batch(; nsteps=100_000, levels=3:14)
 
 	Threads.@threads for i in 1:n
 		ncells = levels[i]
-		r = Sqra.discretize(Sqra.SpBoxDiscretisation(ncells=ncells), sim)
-		c = Sqra.committor(r)
+		t1 = @elapsed r = Sqra.discretize(Sqra.SpBoxDiscretisation(ncells=ncells), sim)
+		t2 = @elapsed c = Sqra.committor(r)
 		ds[i] = r
 		cs[i] = c
-
-		jldsave("$ncells.jld2"; r, c)
+		@info "$t1 seconds for discretization $i"
+		@info "$t2 seconds for committor $i"
 	end
 
 	# compute errors
@@ -46,7 +46,8 @@ function batch(; nsteps=100_000, levels=3:14)
 		carts = ds[i].cartesians
 		ncells = ds[i].ncells
 
-		errs[i] = Sqra.sp_mse(c, _c, carts, _carts, ncells,  _ncells)
+		t = @elapsed errs[i] = Sqra.sp_mse(c, _c, carts, _carts, ncells,  _ncells)
+		@info "$t seconds for mse $i"
 	end
 
 	return sim, ds, cs, errs
@@ -74,7 +75,7 @@ function run_parallel(sim::Simulation; copies=Threads.nthreads(), seeds=1:copies
 		results[i] = run(Simulation(sim, nsteps = cld(sim.nsteps, copies), seed = seeds[i]))
 	end
 
-	return Sqra.Simulation(sim, nsteps = sim.nsteps*8,
+	return Sqra.Simulation(sim,
 		x = mapreduce(x->x.x, hcat, results),
 		u = mapreduce(x->x.u, vcat, results))
 end
@@ -85,7 +86,8 @@ end
 	Random.seed!(seed)
 	potential(x) = lennard_jones_harmonic(x; epsilon=epsilon, sigma=r0, harm=harm)
 
-	x = eulermaruyama(x0 |> vec, potential, sigma, dt, nsteps, maxdelta=maxdelta)
+	x = eulermaruyama(x0 |> vec, potential, sigma, dt, nsteps, maxdelta=maxdelta,
+		progressbar=Threads.threadid() == 1)
 	u = mapslices(potential, x, dims=1) |> vec
 
 	@pack_Simulation
