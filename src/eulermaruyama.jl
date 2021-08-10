@@ -39,14 +39,17 @@ function eulermaruyama(x0::AbstractVector, potential::Function, sigma::Real, dt:
     for t in 2:steps+1
 		for i in 1:1
 			ForwardDiff.gradient!(grad, potential, x, cfg)
-			if sqrt(sum(abs2, grad * dt)) > maxdelta
-				x = eulermaruyama(x, potential, sigma, dt/10, 10, maxdelta=maxdelta, progressbar=false)[:, end]
+			delta = sqrt(sum(abs2, grad * dt))
+			if delta > maxdelta
+				n = ceil(Int, delta / maxdelta)
+				x = eulermaruyama(x, potential, sigma, dt/n, n, maxdelta=maxdelta, progressbar=false)[:, end]
 			else
 				x .+= -grad * dt .+ sigma * randn(dim) * sqrt(dt)
 			end
 			xs[:, t] = x
 		end
         next!(p)
+		yield()
     end
     return xs
 end
