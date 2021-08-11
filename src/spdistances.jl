@@ -5,7 +5,8 @@ using SparseArrays
 # mean squared error of two scalar functions (not densities!) on two respective
 # sparse box distributions integrated over their common support
 function sp_mse(x1, x2, cart1, cart2, res1, res2)
-	I,J,V = spdistances(res1, res2, cart1, cart2)
+	v = sb_overlap(cart1, cart2, res1, res2)
+	I,J,V = findnz(v)
 	e = 0
 	for i in 1:length(I)
 		e += (x1[I[i]] - x2[J[i]])^2 * V[i]
@@ -13,6 +14,10 @@ function sp_mse(x1, x2, cart1, cart2, res1, res2)
 	e
 end
 
+sb_overlap(a, b, k, l) = sbv_linear(a,b,k,l)
+#sb_overlap = sbv_old
+
+sbv_old(b1,b2,k,l) = sparse(spdistances(k,l,b1,b2)..., size(b1,2), size(b2,2))
 
 # returns the common volume of two sparse discretizations of a unit volume
 # compare all cells withanother, compute the boundaries and resp. distances in each dimension and take the product
@@ -51,35 +56,8 @@ function spdistances(res1, res2, cart1, cart2)
 	return I, J, V
 end
 
-function test_spdistances()
-	@assert spdistances(2,2,[1 2; ], [1 2; ]) == [.5 0; 0 .5]
-end
-#=
-function spdistances_vec(res1, res2, cart1, cart2)
-	c1 = cart1 / res1
-	c2 = cart2 / res2
-	w1 = 1/res1 / 2 # half width of the box
-	w2 = 1/res2 / 2
-	left = max.(c1 .- w1, c2 .- w2)
-	right = min.(c1 .+ w1, c2 .+ w2)
-	d = max.(right-left, 0)
-	prod(d, dims=1)
-end
-=#
 
-using SparseArrays
-
-sbv_old(b1,b2,k,l) = sparse(spdistances(k,l,b1,b2)..., size(b1,2), size(b2,2))
-
-function test_spb_volume(;d=3, n=10, m=10, k=3, l=3, method=spb_volume)
-	b1 = unique(rand(1:k, d, n), dims=2)
-	b2 = unique(rand(1:l, d, m), dims=2)
-
-	method(b1, b2, k, l)
-end
-
-
-
+##
 
 """ calculate the 1-d overlap between regular discretizations of k and j subdivisions """
 function calc_dists(k,l)
@@ -95,6 +73,7 @@ function calc_dists(k,l)
 	return x
 end
 
+##
 
 """ recursive overlap calculation """
 function sbv_rec(b1, b2, k, l)
@@ -175,9 +154,10 @@ function findint(b, d, x, jstart, jend)
 	return found, s, e
 end
 
+##
 
 """ linear scheme to the recursive operation, traversing all j and matching to an i on the coarsest level """
-function sbv_linear(b1, b2, k, l, cache=cache)
+function sbv_linear(b1, b2, k, l, cache=nothing)
     dists = calc_dists(k, l)
     p1 = sortperm(collect(eachcol(b1)))
     p2 = sortperm(collect(eachcol(b2)))
@@ -187,7 +167,6 @@ function sbv_linear(b1, b2, k, l, cache=cache)
 	b1 = b1[:, p1]
 	b2 = b2[:, p2]
 
-	c = cache(size(b1,1))
 	n = size(b1, 2)
 	for i = 1:n
 		search!(i, b1, b2, dists, V, cache)
@@ -202,7 +181,7 @@ function search!(i, b1, b2, overlap, V, cache=nothing)
 	O = zeros(D)
 
 	l = 1  # current dimesion/level
-	j = readresetcache!(c, b1[:,i])
+	j = readresetcache!(cache, b1[:,i])
 
 	while j <= M
 		o = overlap[b1[l,i], b2[l,j]]
@@ -215,7 +194,7 @@ function search!(i, b1, b2, overlap, V, cache=nothing)
 			end
 			l, j = gonext(l, j, b2)
 		else
-			updatecache!(c, l, j)
+			updatecache!(cache, l, j)
 			O[l] = o
 			if l == D
 				V[i,j] = prod(O)
@@ -249,21 +228,23 @@ function gonext(l, j, b)
 	return l, j
 end
 
-struct Cache
-	coords::Vector{Int}
-	inds::Vector{Ind}
-	level::Int
-end
-
-
 updatecache!(c::Nothing, l, j) = begin end
 readresetcache!(c::Nothing, b) = 1
 
+##
+
+sbv_linear_cached(a,b,k,l) = sbv_linear(a,b,k,l, cache(size(a,1)))
+
+mutable struct Cache
+	coords::Vector{Int}
+	inds::Vector{Int}
+	level::Int
+end
 
 cache(D) = Cache(ones(D), ones(D), 0)
 nocache(D) = nothing
 
-function updatecahe!(c::Cache, l, j)
+function updatecache!(c::Cache, l, j)
 	if c.level < l
 		c.level = l
 		c.inds[l] = j
@@ -273,7 +254,7 @@ end
 function readresetcache!(c::Cache, b)
 	l = 1
 	for i in 1:length(b)
-		if b[i] = c.coords[i]
+		if b[i] == c.coords[i]
 			l = i
 		else
 			break
@@ -283,6 +264,97 @@ function readresetcache!(c::Cache, b)
 	j = c.inds[l]
 	c.coords .= b
 	c.inds[l:end] .= j  # does this change anything? probably...
-	c.level = 0
+	c.level = l
 	return j
 end
+
+
+##
+
+sbv_methods = [sb_overlap ,sbv_old, sbv_rec, sbv_linear, sbv_linear_cached]
+
+function test_23(method=sbv_old)
+	k = 2
+	l = 3
+	b1 = [1 1 2 2; 1 2 1 2]
+	b2 = [1 1 1 2 2 2 3 3 3; 1 2 3 1 2 3 1 2 3]
+
+
+
+	truth = [4 2 0 2 1 0 0 0 0
+	         0 2 4 0 1 2 0 0 0
+			 0 0 0 2 1 0 4 2 0
+			 0 0 0 0 1 2 0 2 4] / 36
+
+	v = method(b1, b2, k, l)
+
+	@assert isapprox(v, truth)
+
+	for i=1:100
+		i1 = subsample(size(b1,1))
+		i2 = subsample(size(b2,1))
+		v = method(b1[:,i1], b2[:,i2], k, l)
+		@assert isapprox(v, truth[i1,i2])
+	end
+end
+
+function test_compare(n=100,m=100,k=10,l=5,d=4; method=sbv_linear)
+	b1 = randboxes(n, k, d)
+	b2 = randboxes(m, l, d)
+
+	v1 = sbv_old(b1,b2,k,l)
+	v2 = method(b1,b2,k,l)
+
+    return v1,v2,  isapprox(v1,v2)
+	#@assert
+end
+
+using Random
+Random.seed!(0)
+b1 = randboxes(100, 10, 4)
+b2 = randboxes(100, 5, 4)
+
+#
+#=
+using BenchmarkTools
+
+function benchmark(n, m, k,l,d)
+	for meth in sbv_methods
+		println("method $meth")
+		display(@benchmark test_compare($n, $m, $k, $l, $d, method=$meth))
+	end
+end
+=#
+
+function test_data(n=100,m=100,k=10,l=5,d=4)
+	b1 = randboxes(n, k, d)
+	b2 = randboxes(m, l, d)
+	b1, b2, k, l
+end
+
+function test_sbv()
+	for method in sbv_methods
+		try
+			test_23(method)
+		catch
+			println("method $method failed 23")
+		end
+	end
+
+	for method in sbv_methods
+		for i=1:10
+		try
+
+				v1,v2,same = test_compare(method=method)
+				@assert same
+
+		catch
+			println("method $method failed test_compare")
+		end
+	end
+	end
+end
+
+subsample(n) = shuffle(1:n)[1:rand(1:n)]
+
+randboxes(n, k, d) = reduce(hcat, unique(eachcol(rand(1:k, d, n))))
