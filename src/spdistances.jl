@@ -79,6 +79,24 @@ function test_spb_volume(;d=3, n=10, m=10, k=3, l=3, method=spb_volume)
 end
 
 
+
+
+""" calculate the 1-d overlap between regular discretizations of k and j subdivisions """
+function calc_dists(k,l)
+	x = zeros(k,l)
+	for i in 1:k, j in 1:l
+		l1, r1 = 1/k*(i-1), 1/k*i
+		l2, r2 = 1/l*(j-1), 1/l*j
+		ll = max(l1, l2)
+		r = min(r1, r2)
+		x[i,j] = ll<r ? r-ll :
+			(l1<r2 ? Inf : -Inf)
+	end
+	return x
+end
+
+
+""" recursive overlap calculation """
 function sbv_rec(b1, b2, k, l)
     dists = calc_dists(k, l)
     p1 = sortperm(collect(eachcol(b1)))
@@ -99,27 +117,16 @@ function sbv_rec(b1, b2, k, l)
 	return V[invperm(p1), invperm(p2)]
 end
 
-function calc_dists(k, l)
-	x = zeros(k,l)
-	for i in 1:k
-		for j in 1:l
-			if i == j
-				x[i,j] = 1/k
-			elseif i < j
-				x[i,j] = Inf
-			elseif i > j
-				x[i,j] = -Inf
-			end
-		end
-	end
-	x
-end
 
+""" initialization to the recursion """
 function deepen(i, b1, b2, V, dists)
 	D, m = size(b2)
 	deepen(1, i, 1, m, b1, b2, D, 1, V, dists)
 end
 
+""" check if compare b2[d,jstart:jend] has overlap with b1[d, i].
+if so call itself recursively on the interval of same d-th coordinate and d=d+1,
+finally (on match on lowest level) update V with the volume """
 function deepen(d, i, jstart, jend, b1, b2, maxd, v, V, dists)
 	#@show d, jstart, jend
 	di = b1[d, i]
@@ -146,6 +153,7 @@ function deepen(d, i, jstart, jend, b1, b2, maxd, v, V, dists)
 	end
 end
 
+""" find s/e such that b[d,s,e] == x searching only between jstart:jend"""
 function findint(b, d, x, jstart, jend)
 	found = false
 	s = jstart
@@ -168,8 +176,8 @@ function findint(b, d, x, jstart, jend)
 end
 
 
-
-function sbv_linear(b1, b2, k, l)
+""" linear scheme to the recursive operation, traversing all j and matching to an i on the coarsest level """
+function sbv_linear(b1, b2, k, l, cache=cache)
     dists = calc_dists(k, l)
     p1 = sortperm(collect(eachcol(b1)))
     p2 = sortperm(collect(eachcol(b2)))
@@ -179,21 +187,22 @@ function sbv_linear(b1, b2, k, l)
 	b1 = b1[:, p1]
 	b2 = b2[:, p2]
 
+	c = cache(size(b1,1))
 	n = size(b1, 2)
 	for i = 1:n
-		search!(i, b1, b2, dists, V)
+		search!(i, b1, b2, dists, V, cache)
 	end
 
 	return V[invperm(p1), invperm(p2)]
 end
 
 
-function search!(i, b1, b2, overlap, V)
+function search!(i, b1, b2, overlap, V, cache=nothing)
 	D, M = size(b2)
 	O = zeros(D)
 
 	l = 1  # current dimesion/level
-	j = 1
+	j = readresetcache!(c, b1[:,i])
 
 	while j <= M
 		o = overlap[b1[l,i], b2[l,j]]
@@ -206,6 +215,7 @@ function search!(i, b1, b2, overlap, V)
 			end
 			l, j = gonext(l, j, b2)
 		else
+			updatecache!(c, l, j)
 			O[l] = o
 			if l == D
 				V[i,j] = prod(O)
@@ -217,10 +227,7 @@ function search!(i, b1, b2, overlap, V)
 	end
 end
 
-function updatecache()
-end
-
-# go from position [l,j] to the next
+# go from position [l,j] to the next with a different entry
 function gonext(l, j, b)
 	n = size(b,2)
 
@@ -240,4 +247,42 @@ function gonext(l, j, b)
 	end
 
 	return l, j
+end
+
+struct Cache
+	coords::Vector{Int}
+	inds::Vector{Ind}
+	level::Int
+end
+
+
+updatecache!(c::Nothing, l, j) = begin end
+readresetcache!(c::Nothing, b) = 1
+
+
+cache(D) = Cache(ones(D), ones(D), 0)
+nocache(D) = nothing
+
+function updatecahe!(c::Cache, l, j)
+	if c.level < l
+		c.level = l
+		c.inds[l] = j
+	end
+end
+
+function readresetcache!(c::Cache, b)
+	l = 1
+	for i in 1:length(b)
+		if b[i] = c.coords[i]
+			l = i
+		else
+			break
+		end
+	end
+
+	j = c.inds[l]
+	c.coords .= b
+	c.inds[l:end] .= j  # does this change anything? probably...
+	c.level = 0
+	return j
 end
