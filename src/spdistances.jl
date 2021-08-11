@@ -157,7 +157,7 @@ end
 ##
 
 """ linear scheme to the recursive operation, traversing all j and matching to an i on the coarsest level """
-function sbv_linear(b1, b2, k, l, cache=nothing)
+function sbv_linear(b1, b2, k, l; cachetype=IndexCache)
     dists = calc_dists(k, l)
     p1 = sortperm(collect(eachcol(b1)))
     p2 = sortperm(collect(eachcol(b2)))
@@ -167,34 +167,76 @@ function sbv_linear(b1, b2, k, l, cache=nothing)
 	b1 = b1[:, p1]
 	b2 = b2[:, p2]
 
-	n = size(b1, 2)
+	d, n = size(b1)
+	c = cachetype(d)
+
 	for i = 1:n
-		search!(i, b1, b2, dists, V, cache)
+		j = start(c, b1[:, i])
+		firstmatch = search!(i, b1, b2, dists, V, j)
+		update!(c, b1[:,i], firstmatch)
 	end
 
 	return V[invperm(p1), invperm(p2)]
 end
 
+sbv_linear_nocache(args...) = sbv_linear(args...; cachetype=NoCache)
 
-function search!(i, b1, b2, overlap, V, cache=nothing)
+struct IndexCache
+	box::Vector{Int}
+	ind::Vector{Int}
+end
+
+IndexCache(d) = IndexCache(ones(d), ones(d))
+
+function start(c::IndexCache, b)
+	i = findfirst(c.box .!= b)
+	j = isnothing(i) ? c.ind[end] : c.ind[i]
+	return j
+end
+
+function update!(c::IndexCache, b, firstmatch)
+	i = findfirst(c.box .!= b)
+	if !isnothing(i)
+		c.box[i:end] = b[i:end]
+		c.ind[i:end] = firstmatch[i:end]
+	end
+end
+
+struct NoCache end
+
+NoCache(d) = NoCache()
+start(::NoCache, _) = 1
+update!(::NoCache, _, _) = nothing
+
+
+function search!(i, b1, b2, overlap, V, j)
 	D, M = size(b2)
 	O = zeros(D)
+	firstmatch = zeros(Int, D)
+	lm = 0  # depth of match
 
 	l = 1  # current dimesion/level
-	j = readresetcache!(cache, b1[:,i])
+
 
 	while j <= M
 		o = overlap[b1[l,i], b2[l,j]]
 		if o == -Inf
 			l,j = gonext(l, j, b2)
 		elseif o == Inf
+			if lm < l
+				lm = l
+				firstmatch[l:end] .= j
+			end
 			l = l - 1
 			if l == 0
 				break
 			end
 			l, j = gonext(l, j, b2)
 		else
-			updatecache!(cache, l, j)
+			if lm < l
+				lm = l
+				firstmatch[l:end] .= j
+			end
 			O[l] = o
 			if l == D
 				V[i,j] = prod(O)
@@ -204,11 +246,14 @@ function search!(i, b1, b2, overlap, V, cache=nothing)
 			end
 		end
 	end
+	return firstmatch
 end
 
-# go from position [l,j] to the next with a different entry
+
+
+# go from position j to the next with a different entry in dimensions[1:l]
 function gonext(l, j, b)
-	n = size(b,2)
+	n = size(b, 2)
 
 	found = false
 
@@ -298,12 +343,12 @@ function test_23(method=sbv_old)
 	end
 end
 
-function test_compare(n=100,m=100,k=10,l=5,d=4; method=sbv_linear)
+function test_compare(n=100,m=100,k=10,l=5,d=4; method1=sbv_linear, method2=sbv_old)
 	b1 = randboxes(n, k, d)
 	b2 = randboxes(m, l, d)
 
-	v1 = sbv_old(b1,b2,k,l)
-	v2 = method(b1,b2,k,l)
+	v1 = method1(b1,b2,k,l)
+	v2 = method2(b1,b2,k,l)
 
     return v1,v2,  isapprox(v1,v2)
 	#@assert
