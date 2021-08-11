@@ -43,25 +43,32 @@ function sbv_linear(b1, b2, k, l; cachetype=IndexCache)
     p1 = sortperm(collect(eachcol(b1)))
     p2 = sortperm(collect(eachcol(b2)))
 
- 	V = spzeros(size(b1, 2), size(b2, 2))
-
 	b1 = b1[:, p1]
-	b2 = b2[:, p2]
+	bb = b2[:, p2]  # we keep this for col major access in gonext
+	b2 = collect(bb')' # use lazy transpose to get faster row-major vectors in gonext
+	# bb = b2  # in memory sensitive situations we can discard the col major 
+
 
 	d, n = size(b1)
 	c = cachetype(d)
 
+	I = Int[]
+	J = Int[]
+	V = Float64[]
+
 	for i = 1:n
 		j = start(c, b1[:, i])
-		firstmatch = search!(i, b1, b2, dists, V, j)
+		firstmatch = search!(i, b1, b2, dists, I, J, V, j, bb)
 		update!(c, b1[:,i], firstmatch)
 	end
+
+	V = sparse(I,J,V,size(b1, 2), size(b2, 2))
 
 	return V[invperm(p1), invperm(p2)]
 end
 
 
-function search!(i, b1, b2, overlap, V, j)
+function search!(i, b1, b2, overlap, I, J, V, j, bb)
 	D, M = size(b2)
 	O = zeros(D)
 
@@ -73,7 +80,7 @@ function search!(i, b1, b2, overlap, V, j)
 	while j <= M
 		o = overlap[b1[l,i], b2[l,j]]
 		if o == -Inf
-			l,j = gonext(l, j, b2)
+			l,j = gonext(l, j, b2, bb)
 		elseif o == Inf
 			if lm < l  # only for cache updates
 				lm = l
@@ -83,7 +90,7 @@ function search!(i, b1, b2, overlap, V, j)
 			if l == 0
 				break
 			end
-			l, j = gonext(l, j, b2)
+			l, j = gonext(l, j, b2, bb)
 		else
 			if lm < l  # only for cache updates
 				lm = l
@@ -91,8 +98,10 @@ function search!(i, b1, b2, overlap, V, j)
 			end
 			O[l] = o
 			if l == D
-				V[i,j] = prod(O)
-				l, j = gonext(l, j, b2)
+				push!(I, i)
+				push!(J, j)
+				push!(V, prod(O))
+				l, j = gonext(l, j, b2, bb)
 			else
 				l = l + 1
 			end
@@ -103,26 +112,20 @@ end
 
 
 # go from position j to the next with a different entry in dimensions[1:l]
-function gonext(l, j, b)
+function gonext(l, j, b, bb)
 	n = size(b, 2)
-
-	found = false
-
-	for i in j+1:n, d in 1:l
-		if b[d, i] != b[d,j]
-			l = d
-			j = i
-			found = true
-			break
+	for i in j+1:n
+		@inbounds @views if b[l,i] != b[l,j]
+			if bb[1:l-1, i] == bb[1:l-1, j]
+				return l, i
+			else
+				return gonext(l-1,j, b, bb)
+			end
 		end
 	end
-
-	if found == false
-		j = n + 1
-	end
-
-	return l, j
+	return l, n+1
 end
+
 
 ### Caching for faster traversal, remembers the starting j for increasing i
 
@@ -158,6 +161,7 @@ update!(::NoCache, _, _) = nothing
 
 ## Tests
 
+sbv_old(b1,b2,k,l) = sparse(spdistances(k,l,b1,b2)..., size(b1,2), size(b2,2))
 sbv_methods = [sbv_linear, sbv_linear_nocache, sbv_old]
 
 using Random
@@ -215,8 +219,6 @@ function test_sbv()
 	end
 end
 
-
-sbv_old(b1,b2,k,l) = sparse(spdistances(k,l,b1,b2)..., size(b1,2), size(b2,2))
 
 # returns the common volume of two sparse discretizations of a unit volume
 # compare all cells withanother, compute the boundaries and resp. distances in each dimension and take the product
