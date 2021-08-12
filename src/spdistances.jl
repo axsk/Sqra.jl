@@ -38,7 +38,9 @@ end
 sbv_linear_nocache(args...) = sbv_linear(args...; cachetype=NoCache)
 
 """ linear scheme to the recursive operation, traversing all j and matching to an i on the coarsest level """
-function sbv_linear(b1, b2, k, l; cachetype=IndexCache)
+function sbv_linear(b1, b2, k, l, cachetype=IndexCache)
+	@assert size(b1, 1) == size(b2, 1)
+
     dists = calc_dists(k, l)
     p1 = sortperm(collect(eachcol(b1)))
     p2 = sortperm(collect(eachcol(b2)))
@@ -114,12 +116,12 @@ end
 # go from position j to the next with a different entry in dimensions[1:l]
 function gonext(l, j, b, bb)
 	n = size(b, 2)
-	for i in j+1:n
-		@inbounds @views if b[l,i] != b[l,j]
-			if bb[1:l-1, i] == bb[1:l-1, j]
+	@inbounds @views for i in j+1:n
+		if b[l,i] != b[l,j]  # search difference to the right
+			if bb[1:l-1, i] == bb[1:l-1, j]  # check that everything above is the same
 				return l, i
 			else
-				return gonext(l-1,j, b, bb)
+				return gonext(l-1,j, b, bb)  # otherwise search difference a level higher
 			end
 		end
 	end
@@ -202,7 +204,7 @@ function test_compare(n=100,m=100,k=10,l=5,d=4; method=sbv_linear, ref=sbv_old)
 	@assert isapprox(v1,v2)
 end
 
-benchmarkdata() = test_data(10000,10000,10,10,5)
+benchmarkdata() = test_data(10000,10000,8,8,6)
 
 function test_data(n=100,m=100,k=10,l=5,d=4)
 	b1 = randboxes(n, k, d)
