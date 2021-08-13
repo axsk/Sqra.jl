@@ -148,7 +148,7 @@ sqra(d::VoronoiDiscretization, x, u, beta) = sqra_voronoi(x, u, d.npicks, beta, 
 	if isa(discretization,SpBoxDiscretisation)
 		cartesians = cartesiancoords(picks, discretization.ncells, discretization.boundary)
 		#@pack! discretization = cartesians
-		discretization = SpBoxDiscretisation(cartesians = cartesians)
+		discretization = SpBoxDiscretisation(discretization, cartesians = cartesians)
 	end
 
 	#@pack! discretization = Q, inds, picks, u
