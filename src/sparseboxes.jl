@@ -2,37 +2,65 @@ using Distances
 using SparseArrays
 using ProgressMeter
 
-spboxes(points::Vector, args...) = spboxes(reshape(points, (1, length(points))), args...)
-
-function spboxes(points::Matrix, ncells, boundary=autoboundary(points))
-	cartesians = cartesiancoords(points, ncells, boundary)
-
-    cartesians, neigh_inds = uniquecoldict(cartesians)
-
-	inside = all(1 .<= cartesians .<= ncells, dims=1) |> vec
-	cartesians = cartesians[:, inside]
-	neigh_inds = neigh_inds[inside]
-
-	@show size(normalized, 2),  sum(inside)
-
-	dims = repeat([ncells], size(points, 1))
-	lininds = to_linearinds(cartesians, dims)
-	A = boxneighbors(lininds, dims)
-
-
-	A, cartesians, neigh_inds #, sparse(A)
-end
 
 function cartesiancoords(points, ncells, boundary=autoboundary(points))
 	#affine transformation of boundary box onto the unit cube (ncells)
-	normalized = (points .- boundary[:,1]) ./ (boundary[:,2] - boundary[:,1]) * ncells
+	normalized = (points .- boundary[:,1]) ./ (boundary[:,2] - boundary[:,1]) * ncells  # (289)
 	cartesians = ceil.(Int, normalized)  # round to next int
     cartesians[normalized.==0] .= 1  # and adjust for left boundary
 	return cartesians
 end
 
+inside(cart, ncells) = all(1 .<= cart .<= ncells)  # todo: 240 is there sthg faster?
 
-function sparseboxpick(points::AbstractMatrix, ncells, potentials, boundary=autoboundary(points))
+function autoboundary(x)
+    hcat(minimum(x, dims=2), maximum(x, dims=2))
+end
+
+function boxcenters(cartesians, boundary, ncells)
+	delta = (boundary[:,2]-boundary[:,1])
+	return (cartesians .- 1/2)  .* delta ./ (ncells) .+ boundary[:,1]
+end
+
+
+
+function sparseboxpick(points, ncells, u, boundary=autoboundary(points))
+	carts = cartesiancoords(points, ncells, boundary)
+	boxes, allinds = uniquecols(carts, ncells)
+
+	inds = map(i -> i[argmin(u[i])], allinds)
+	A = boxneighbors(boxes, ncells)
+
+	return A, inds
+end
+
+function uniquecols(c, ncells)
+	p = sortperm(collect(eachcol(c)))
+
+	inds = [Int[]]
+	last = @view c[:, p[1]]
+
+	for i in 1:length(p)
+		pp = p[i]
+		curr = view(c, :, pp)
+		!inside(curr, ncells) && continue
+		if last == curr
+			push!(inds[end], pp)
+		else
+			push!(inds, [pp])
+		end
+		last = curr
+	end 
+
+	ii = map(first, inds)
+	b = c[:, ii]
+	
+	return b, inds
+end
+
+
+
+function sparseboxpick_old(points::AbstractMatrix, ncells, potentials, boundary=autoboundary(points))
 	n, m = size(points)
 	cartesians = cartesiancoords(points, ncells, boundary)
 	#order=[]
@@ -57,22 +85,31 @@ function sparseboxpick(points::AbstractMatrix, ncells, potentials, boundary=auto
 
 	A = boxneighbors(cartesians[:, picks], ncells)
 
-	#@show length(picks)
-
 	return A, picks
 end
 
-inside(cart, ncells) = all(1 .<= cart .<= ncells)
 
-function boxneighbors(cartesians, ncells)
-	dims = [ncells for i in 1:size(cartesians, 1)]
+
+### Very old implementation
+
+spboxes(points::Vector, args...) = spboxes(reshape(points, (1, length(points))), args...)
+
+function spboxes(points::Matrix, ncells, boundary=autoboundary(points))
+	cartesians = cartesiancoords(points, ncells, boundary)
+
+    cartesians, neigh_inds = uniquecoldict(cartesians)
+
+	inside = all(1 .<= cartesians .<= ncells, dims=1) |> vec
+	cartesians = cartesians[:, inside]
+	neigh_inds = neigh_inds[inside]
+
+	dims = repeat([ncells], size(points, 1))
 	lininds = to_linearinds(cartesians, dims)
-	A = _boxneighbors(lininds, dims)
-	return A
+	A = boxneighbors(lininds, dims)
+
+
+	A, cartesians, neigh_inds #, sparse(A)
 end
-
-
-
 
 
 function uniquecoldict(x)
@@ -84,15 +121,58 @@ function uniquecoldict(x)
 	return reduce(hcat, keys(ua)), values(ua)|>collect
 end
 
-function autoboundary(x)
-    hcat(minimum(x, dims=2), maximum(x, dims=2))
+### Tests and benchmarks
+
+
+using Profile, Random
+
+function benchbox(n=100000, k=10, d=6)
+	Random.seed!(1)	
+	points = rand(d, n)
+	boundary = autoboundary(points)
+	boxify(points, k, boundary)
+	Profile.init(10000000, 0.0001)
+	#Profile.clear
+	@btime boxify($points, $k, $boundary)
+	@profile for i=1:10
+		boxify(points, k, boundary)
+	end
+	Profile.print(mincount=10, maxdepth=14)
 end
 
-function boxcenters(cartesians, boundary, ncells)
-	delta = (boundary[:,2]-boundary[:,1])
-	return (cartesians .- 1/2)  .* delta ./ (ncells) .+ boundary[:,1]
+using BenchmarkTools
+
+function benchboth(n=10000, k=10, d=6)
+	points = rand(d, n)
+	boundary = autoboundary(points)
+	u = rand(n)
+
+	begin 
+		A, i = sparseboxpick_old(points, k, u, boundary)
+		p = sortperm(collect(eachcol(points)))
+		a = points[:,p]
+	end
+
+	begin 
+		A, i = sparseboxpick(points, k, u, boundary)
+	end
 end
 
+# compase old and new function
+function test_sparseboxpick(n=10000, k=10, d=6)
+	p = rand(d, n)
+	u = rand(n)
+	A, i = sparseboxpick(p, k, u)
+	B, j = sparseboxpick_old(p, k, u)
+
+	p1 = sortperm(i)
+	p2 = sortperm(j)
+
+	@assert i[p1] == j[p2]
+	@assert A[p1,p1] == B[p2,p2]
+
+	return  A, B, i, j
+end
 
 function test_spboxes()
     x = [0 0.5 0
@@ -101,6 +181,14 @@ function test_spboxes()
 	@assert all(A .== @show (pairwise(Cityblock(), cartesians) .== 1))
 end
 
+# neighborhood
+
+function boxneighbors(cartesians, ncells)
+	dims = [ncells for i in 1:size(cartesians, 1)]
+	lininds = to_linearinds(cartesians, dims)
+	A = _boxneighbors(lininds, dims)
+	return A
+end
 
 """ given a list of linear indices and the resective dimension of the grid
 compute the neighbors by seraching for each possible (forward) neighbor.
@@ -113,7 +201,9 @@ function _boxneighbors(lininds, dims)
 	offsets = cumprod([1;dims[1:end-1]])
 	n = length(lininds)
 	cart = CartesianIndices(tuple(dims...))
-	A = spzeros(length(lininds), length(lininds))
+	#A = spzeros(length(lininds), length(lininds))
+	I = Int[]
+	J = Int[]
 	#@showprogress "collecting neighbours"
 	for (i, current) in enumerate(lininds)
 		for dim in 1:length(dims)
@@ -130,13 +220,17 @@ function _boxneighbors(lininds, dims)
 			end
 			if (lininds[j] == target) && # target neighbor is present
 				cart[i][dim] < dims[dim] # and we are not looking across the boundary
-				A[i,j] = A[j,i] = 1
+				#A[i,j] = A[j,i] = 1
+				push!(I, i)
+				push!(J, j)
 				pointers[dim] = j + 1
 			else
 				pointers[dim] = j
 			end
 		end
 	end
+	A = sparse(I, J, ones(Bool, length(I)), n, n)
+	A = A + A'
 	return A[invperm(perm), invperm(perm)]
 end
 
