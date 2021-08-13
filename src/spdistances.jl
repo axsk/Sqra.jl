@@ -14,7 +14,7 @@ function sp_mse(x1, x2, cart1, cart2, res1, res2)
 	e
 end
 
-sb_overlap(a, b, k, l) = sbv_linear(a,b,k,l)
+sb_overlap(a, b, k, l) = sbv_linear(a, b, k, l)
 
 ##
 
@@ -35,7 +35,7 @@ end
 
 ### Main routine for overlap computation
 
-sbv_linear_nocache(args...) = sbv_linear(args...; cachetype=NoCache)
+sbv_linear_nocache(args...) = sbv_linear(args..., NoCache)
 
 """ linear scheme to the recursive operation, traversing all j and matching to an i on the coarsest level """
 function sbv_linear(b1, b2, k, l, cachetype=IndexCache)
@@ -48,7 +48,7 @@ function sbv_linear(b1, b2, k, l, cachetype=IndexCache)
 	b1 = b1[:, p1]
 	bb = b2[:, p2]  # we keep this for col major access in gonext
 	b2 = collect(bb')' # use lazy transpose to get faster row-major vectors in gonext
-	# bb = b2  # in memory sensitive situations we can discard the col major 
+	# bb = b2  # in memory sensitive situations we can discard the col major
 
 
 	d, n = size(b1)
@@ -57,6 +57,8 @@ function sbv_linear(b1, b2, k, l, cachetype=IndexCache)
 	I = Int[]
 	J = Int[]
 	V = Float64[]
+
+	#@show size(dists)
 
 	for i = 1:n
 		j = start(c, b1[:, i])
@@ -79,7 +81,7 @@ function search!(i, b1, b2, overlap, I, J, V, j, bb)
 
 	l = 1  # current dimesion/level
 
-	while j <= M
+	while l > 0
 		o = overlap[b1[l,i], b2[l,j]]
 		if o == -Inf
 			l,j = gonext(l, j, b2, bb)
@@ -116,16 +118,21 @@ end
 # go from position j to the next with a different entry in dimensions[1:l]
 function gonext(l, j, b, bb)
 	n = size(b, 2)
+
 	@inbounds @views for i in j+1:n
 		if b[l,i] != b[l,j]  # search difference to the right
 			if bb[1:l-1, i] == bb[1:l-1, j]  # check that everything above is the same
 				return l, i
-			else
-				return gonext(l-1,j, b, bb)  # otherwise search difference a level higher
 			end
+			break
 		end
 	end
-	return l, n+1
+
+	if l > 1
+		return gonext(l-1, j, b, bb)  # otherwise search difference a level higher
+	else
+		return 0, n
+	end
 end
 
 
@@ -157,8 +164,6 @@ struct NoCache end
 NoCache(d) = NoCache()
 start(::NoCache, _) = 1
 update!(::NoCache, _, _) = nothing
-
-
 
 
 ## Tests
@@ -194,6 +199,15 @@ function test_23(method=sbv_methods[1])
 	end
 end
 
+function test_small(method=sbv_methods[1])
+	k=1
+	l=2
+	b1 = [1; 1]
+	b2 = [1 2; 1 1]
+	v = method(b1, b2, k, l)
+	@assert isapprox(sum(v), 0.5)
+end
+
 function test_compare(n=100,m=100,k=10,l=5,d=4; method=sbv_linear, ref=sbv_old)
 	b1 = randboxes(n, k, d)
 	b2 = randboxes(m, l, d)
@@ -201,7 +215,7 @@ function test_compare(n=100,m=100,k=10,l=5,d=4; method=sbv_linear, ref=sbv_old)
 	v1 = method(b1,b2,k,l)
 	v2 = ref(b1,b2,k,l)
 
-	@assert isapprox(v1,v2)
+	@assert isapprox(v1,v2, atol=1e-10)
 end
 
 benchmarkdata() = test_data(10000,10000,8,8,6)

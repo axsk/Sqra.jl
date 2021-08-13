@@ -6,6 +6,12 @@ struct PermaDict{T}
 	prefix::String
 end
 
+mutable struct PermaSettings
+	save::Bool
+end
+
+const ENABLE_PERMADICT = PermaSettings(false)
+
 PermaDict(d=Dict(), prefix="cache/") = PermaDict(d, prefix)
 
 function Base.empty!(d::PermaDict)
@@ -13,6 +19,9 @@ function Base.empty!(d::PermaDict)
 end
 
 function Base.get!(f, d::PermaDict, k)
+	if ENABLE_PERMADICT.save == false
+		return f()
+	end
 	if haskey(d.d, k)
 		@info("found cached entry")
 		v = d.d[k]
