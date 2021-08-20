@@ -11,6 +11,7 @@ using Random
 using JLD2
 using Memoize
 
+export run, run_parallel, Simulation
 
 function batch(sim=Simulation(); copies=Threads.nthreads(), levels=3:14)
 	Random.seed!(0)
@@ -330,17 +331,28 @@ end
 ### Lennard Jones specifics
 
 function lennard_jones_harmonic(x; sigma=1/4, epsilon=1, harm=1)
-    #@show x
     x = reshape(x, 2, 3)
-    _, m = size(x)
     u = 0.
-    for i in 1:m
-        u += sum(abs2, x[:,i]) * harm
-        for j in i+1:m
+    @views for i in 1:3
+        for j in i+1:3
             r = sigma^2 / sum(abs2, (x[:,i] .- x[:,j]))
             u += 4*epsilon * (r^6 - r^3)
         end
     end
+	u += sum(abs2, x) * harm
+    return u
+end
+
+function ljloop(x, sigma=1/4, epsilon=1., harm=1.)
+    u = 0.
+    @inbounds for i = 0:2
+        for j in i+1:2
+            r = (x[1+2*i] - x[1+2*j]) ^ 2 + (x[2+2*i] - x[2+2*j])^2
+            r = sigma^2 / r
+            u += 4*epsilon * (r^6 - r^3)
+        end
+    end
+    u += sum(abs2, x) * harm
     return u
 end
 
