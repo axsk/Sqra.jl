@@ -2,6 +2,23 @@ using Distances
 using SparseArrays
 using ProgressMeter
 
+struct SparseBoxes
+	points::Matrix{Float64}
+	ncells::Int
+	boundary::Matrix{Float64}
+	boxes::Matrix{Int}  # cartesian coordinates of the boxes
+	inds::Vector{Vector{Int}}  # indices to the points contained in each box
+end
+
+function SparseBoxes(points, ncells, boundary=autoboundary(points))
+	carts = cartesiancoords(points, ncells, boundary)
+	boxes, inds = uniquecols(carts, ncells)
+
+	SparseBoxes(points, ncells, boundary, boxes, inds)
+end
+
+adjacency(sb::SparseBoxes) = boxneighbors(sb.boxes, sb.ncells)
+
 function sparseboxpick(points, ncells, u, boundary=autoboundary(points))
 	carts = cartesiancoords(points, ncells, boundary)
 	boxes, allinds = uniquecols(carts, ncells)

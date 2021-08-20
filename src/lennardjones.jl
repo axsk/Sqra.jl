@@ -11,7 +11,7 @@ using Random
 using JLD2
 using Memoize
 
-export run, run_parallel, Simulation
+export run, run_parallel, Simulation, SpBoxDiscretisation, discretize, committor
 
 function batch(sim=Simulation(); copies=Threads.nthreads(), levels=3:14)
 	Random.seed!(0)
@@ -117,42 +117,49 @@ end
 	prune = Inf
 	ncells = 6
 	boundary = [-ones(6) ones(6)] .* 0.8
+	sb = nothing
 	Q = nothing
-	inds = nothing
-	picks = nothing
 	u = nothing
-	cartesians = nothing
+	picks = nothing
 end
 
 #Base.hash(x::SpBoxDiscretisation, y::UInt64) =   hash(map(z->getfield(x, z), fieldnames(typeof(x))), y)
 #Base.hash(x::VoronoiDiscretization, y::UInt64) = hash(map(z->getfield(x, z), fieldnames(typeof(x))), y)
 
-sqra(d::SpBoxDiscretisation, x, u, beta) = sqra_sparse_boxes(x, u, d.ncells, beta, d.boundary)
-sqra(d::VoronoiDiscretization, x, u, beta) = sqra_voronoi(x, u, d.npicks, beta, d.neigh)
 
-@memoize PermaDict(Dict(), "cache/dis_") function discretize(discretization, sim::Simulation)
+
+@memoize PermaDict("cache/dis_") function discretize(d::SpBoxDiscretisation, sim::Simulation)
+
+	d.prune < Inf && error("Pruning is not currently supported. Iterative solver should suffice.")
+
+	sb = SparseBoxes(sim.x, d.ncells, d.boundary)
+	A = adjacency(sb)
+
+	mininds = map(i -> i[argmin(sim.u[i])], sb.inds)
+	u = sim.u[mininds]
+	picks = sim.x[:, mininds]
+	
+	Q = sqra(u, A, sigma_to_beta(sim.sigma))
+
+
+	SpBoxDiscretisation(d, sb=sb, Q=Q, u=u, picks=picks)
+end
+
+
+# warning: this part is old and should be rewritten as above
+@memoize PermaDict(Dict(), "cache/dis_") function discretize(discretization::VoronoiDiscretization, sim::Simulation)
 	@unpack x, u, sigma = sim
 	@unpack prune = discretization
 	sigma = sim.sigma
 	beta = sigma_to_beta(sigma)
 
-	#@unpack_SpBoxDiscretisation params
-	#Q, inds = sqra_sparse_boxes(x, u, ncells, beta, boundary)
-
-	Q, inds = sqra(discretization, x, u, beta)
+	Q, inds = sqra_voronoi(x, u, discretization.npicks, beta, discretization.neigh)
 
 	Q, pinds = prune_Q(Q, prune)
 	inds = inds[pinds]
 	picks = x[:, inds]
 	u = u[inds]
 
-	if isa(discretization,SpBoxDiscretisation)
-		cartesians = cartesiancoords(picks, discretization.ncells, discretization.boundary)
-		#@pack! discretization = cartesians
-		discretization = SpBoxDiscretisation(discretization, cartesians = cartesians)
-	end
-
-	#@pack! discretization = Q, inds, picks, u
 	discretization = typeof(discretization)(discretization, Q=Q, inds=inds, picks=picks, u=u)
 	return discretization
 end
@@ -277,18 +284,7 @@ end
 
 
 
-### Sparse Boxes
 
-function sqra_sparse_boxes(traj::AbstractMatrix, us::AbstractVector, ncells::Integer, beta, boundary=autoboundary(traj))
-	A, picks = sparseboxpick(traj, ncells, us, boundary)
-	Q = sqra(us[picks], A, beta)
-
-	#let fullsize = ncells^size(traj, 1), spsize = size(A,1)
-	#	println("sparsity: $spsize/$fullsize=$(spsize/fullsize)")
-	#end
-
-	return Q, picks
-end
 
 
 ### Voronoi picking

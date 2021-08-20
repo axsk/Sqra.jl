@@ -12,7 +12,7 @@ end
 
 const ENABLE_PERMADICT = PermaSettings(false)
 
-PermaDict(d=Dict(), prefix="cache/") = PermaDict(d, prefix)
+PermaDict(prefix="cache/") = PermaDict(Dict(), prefix)
 
 function Base.empty!(d::PermaDict)
 	empty!(d.d)
