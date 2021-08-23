@@ -2,6 +2,8 @@ using Distances
 using SparseArrays
 using ProgressMeter
 
+export SparseBoxes
+
 struct SparseBoxes
 	points::Matrix{Float64}
 	ncells::Int
@@ -19,15 +21,19 @@ end
 
 adjacency(sb::SparseBoxes) = boxneighbors(sb.boxes, sb.ncells)
 
-function sparseboxpick(points, ncells, u, boundary=autoboundary(points))
-	carts = cartesiancoords(points, ncells, boundary)
-	boxes, allinds = uniquecols(carts, ncells)
-
-	inds = map(i -> i[argmin(u[i])], allinds)
-	A = boxneighbors(boxes, ncells)
-
-	return A, inds
+""" chance to discover a new box per samlpe at the tail of the data """
+function convergence(s::SparseBoxes, tailpercent = 0.05)
+	discoveries = map(first, s.inds) |> sort |> diff
+	tail = ceil(Int, length(discoveries) * (1 - tailpercent))
+	1 / mean(discoveries[tail:end])
 end
+
+function convergencedata(s::SparseBoxes)
+	discoveries = sort(first.(s.inds))
+	discoveries, 1:length(discoveries)
+end
+
+
 
 function autoboundary(x)
     hcat(minimum(x, dims=2), maximum(x, dims=2))
@@ -44,10 +50,11 @@ end
 function uniquecols(c, ncells)
 	p = sortperm(collect(eachcol(c)))
 
-	inds = [Int[]]
+	inds = Vector{Int}[]
 	last = @view c[:, p[1]]
+	inside(last, ncells) && push!(inds, [p[1]])
 
-	for i in 1:length(p)
+	for i in 2:length(p)
 		pp = p[i]
 		curr = view(c, :, pp)
 		!inside(curr, ncells) && continue
@@ -57,11 +64,11 @@ function uniquecols(c, ncells)
 			push!(inds, [pp])
 		end
 		last = curr
-	end 
+	end
 
 	ii = map(first, inds)
 	b = c[:, ii]
-	
+
 	return b, inds
 end
 
@@ -125,6 +132,18 @@ end
 
 
 ### deprecated
+
+
+# deprecated since the picking is part of sqra not sparse boxes, only here for tests
+function sparseboxpick(points, ncells, u, boundary=autoboundary(points))
+	carts = cartesiancoords(points, ncells, boundary)
+	boxes, allinds = uniquecols(carts, ncells)
+
+	inds = map(i -> i[argmin(u[i])], allinds)
+	A = boxneighbors(boxes, ncells)
+
+	return A, inds
+end
 
 function sparseboxpick_old(points::AbstractMatrix, ncells, potentials, boundary=autoboundary(points))
 	n, m = size(points)
