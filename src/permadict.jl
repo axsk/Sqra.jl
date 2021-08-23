@@ -28,12 +28,12 @@ function Base.get!(f, d::PermaDict, k)
 	else
 		fn = d.prefix * string(mhash(k)) * ".jld2"
 		if isfile(fn)
-			@info("found saved entry")
+			@info("found saved entry $fn")
 			v = load(fn, "output")
 		else
 			v = f()
 			save(fn, "input", k, "output", v)
-			@info("saved new entry")
+			@info("saved new entry $fn")
 		end
 		d.d[k] = v
 	end

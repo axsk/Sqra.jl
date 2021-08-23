@@ -13,11 +13,18 @@ using Memoize
 
 export run, run_parallel, Simulation, SpBoxDiscretisation, discretize, committor
 
-function batch(sim=Simulation(); copies=Threads.nthreads(), levels=3:14)
+function runbatch()
+	batch(Simulation(nsteps=1_000_000), seeds=1:1, levels=vcat(3:20, 30, 40))
+	batch(Simulation(nsteps=10_000_000), seeds=1:1, levels=vcat(3:20, 30, 40))
+	batch(Simulation(nsteps=100_000_000), seeds=1:1, levels=vcat(3:20, 30, 40))
+	batch(Simulation(nsteps=1_000_000_000), seeds=1:20, levels=vcat(3:20, 30, 40))
+end
+
+@memoize PermaDict(Dict(), "cache/batch_") function batch(sim=Simulation(); seeds=1:1, levels=3:14)
 	Random.seed!(0)
 
 	# simulate trajectory
-	sim = Sqra.run_parallel(sim, copies=copies)
+	sim = Sqra.run_parallel(sim, seeds=seeds)
 
 	# compute discretizations
 	n = length(levels)
@@ -28,26 +35,17 @@ function batch(sim=Simulation(); copies=Threads.nthreads(), levels=3:14)
 	Threads.@threads for i in 1:n
 		ncells = levels[i]
 		t1 = @elapsed r = Sqra.discretize(Sqra.SpBoxDiscretisation(ncells=ncells), sim)
+		@info "$t1 seconds for discretization $i"
 		t2 = @elapsed c = Sqra.committor(r)
+		@info "$t2 seconds for committor $i"
 		ds[i] = r
 		cs[i] = c
-		@info "$t1 seconds for discretization $i"
-		@info "$t2 seconds for committor $i"
 	end
 
-	# compute errors
-	_c = cs[end]
-	_carts = ds[end].cartesians
-	_ncells = ds[end].ncells
 
 	errs = Array{Any}(undef, n)
-
 	Threads.@threads for i in 1:n
-		c = cs[i]
-		carts = ds[i].cartesians
-		ncells = ds[i].ncells
-
-		t = @elapsed errs[i] = Sqra.sp_mse(c, _c, carts, _carts, ncells,  _ncells)
+		t = @elapsed errs[i] = Sqra.sp_mse(cs[i], cs[end], ds[i].sb, ds[end].sb)
 		@info "$t seconds for mse $i"
 	end
 
@@ -70,7 +68,18 @@ end
 	u=nothing
 end
 
-function run_parallel(sim::Simulation; copies=Threads.nthreads(), seeds=1:copies)
+using Setfield
+
+function permute(s::Simulation)
+	xp = s.x
+	xp = hcat(xp, xp[[4,3,2,1,6,5],:])
+	s = @set s.x = xp
+	s = @set s.u = vcat(s.u, s.u)
+	s = @set s.nsteps = s.nsteps*2
+end
+
+function run_parallel(sim::Simulation; seeds=1:Threads.nthreads())
+	copies=length(seeds)
 	results = Array{Simulation}(undef, copies)
 	batch = cld(sim.nsteps, copies)
 
@@ -132,18 +141,30 @@ end
 
 	d.prune < Inf && error("Pruning is not currently supported. Iterative solver should suffice.")
 
+
 	sb = SparseBoxes(sim.x, d.ncells, d.boundary)
 	A = adjacency(sb)
 
 	mininds = map(i -> i[argmin(sim.u[i])], sb.inds)
 	u = sim.u[mininds]
 	picks = sim.x[:, mininds]
-	
+
 	Q = sqra(u, A, sigma_to_beta(sim.sigma))
 
+	Q, pinds = prune_Q(Q, d.prune)
+	picks = picks[:, pinds]
+	u = u[pinds]
+	sb = prune(sb, pinds)
 
 	SpBoxDiscretisation(d, sb=sb, Q=Q, u=u, picks=picks)
 end
+
+using Setfield
+function prune(b::SparseBoxes, pinds)
+	b = @set b.boxes = b.boxes[:, pinds]
+	b = @set b.inds = b.inds[pinds]
+end
+
 
 
 # warning: this part is old and should be rewritten as above
@@ -170,7 +191,18 @@ sigma_to_beta(sigma) = 2 / sigma^2
 
 ### Committor computation
 
-function committor(discretization, method = idrs; maxiter=1000, precondition=false)
+function changepoints(c)
+	cc = copy(c)
+	for i in 2:length(c)
+		cc[i] != 0 && continue
+		cc[i] = cc[i-1]
+	end
+	findall(diff(cc) .!= 0).+1
+end
+
+
+
+function committor(discretization, maxiter=1000)
 	@unpack Q, picks = discretization
     cl = classify(picks)
 
@@ -185,11 +217,11 @@ function committor(discretization, method = idrs; maxiter=1000, precondition=fal
 	P = Diagonal(stat)
 	=#
 
-	P = Diagonal(A)
+	Pl = Diagonal(A)
 
-	IterativeSolvers.gmres!(c, A, b; maxiter=maxiter, Pl=P)
+	IterativeSolvers.gmres!(c, A, b; maxiter=maxiter, Pl=Pl)
 
-	res = sqrt(sum(abs2, A*c - b))
+	res = sqrt(sum(abs2, (Pl^-1)*(A*c - b)))
 	println("Committor residual: ", res)
 
 	return c

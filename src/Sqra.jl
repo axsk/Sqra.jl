@@ -10,11 +10,13 @@ include("permadict.jl")
 #include("metasgd.jl")
 #include("molly.jl")
 #include("neurcomm.jl")
-include("lennardjones.jl")
+
 include("picking.jl")
 include("sparseboxes.jl")
+
 include("spdistances.jl")
 include("sqra_core.jl")
 include("voronoi_lp.jl")
+include("lennardjones.jl")
 
 end

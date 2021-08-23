@@ -1,9 +1,9 @@
 using Profile
 using Sqra
 
-Profile.clear()
-@profile run(Simulation)
-Profile.print()
+#Profile.clear()
+#@profile run(Simulation)
+#Profile.print()
 
 
 function pprint(needle="")
