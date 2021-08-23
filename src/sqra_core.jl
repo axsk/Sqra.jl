@@ -19,7 +19,7 @@ function sqra(u::Vector, A::SparseMatrixCSC, beta::Real)
     for n in 1:length(q)
         q[n] = exp(v[J[n]] - v[I[n]]) * a[n]
     end
-    Q = sparse(I, J, q)
+    Q = sparse(I, J, q, size(A)...)
     Q = fixdiagonal(Q)
 end
 
