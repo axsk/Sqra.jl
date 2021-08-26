@@ -1,14 +1,26 @@
+using Test
 using Sqra
 
-function runtests()
+@testset "Experiment" begin
+	Experiment(Setup())
+end
 
+@testset "Sparse Boxes" begin
 	include("sparseboxes.jl")
+end
 
+@testset "SpBoxDiscretisation" begin
+	s = run(Simulation())
+	d = discretize(SpBoxDiscretisation(), s)
+	c = Sqra.committor(d)
+end
+
+@testset "Refactor" begin
 	s = run(Simulation())
 	d = discretize(SpBoxDiscretisation(), s)
 	c = Sqra.committor(d)
 
-	Experiment(Setup())
-end
+	e = Experiment(Setup())
 
-runtests()
+	@test c == e.committor
+end
