@@ -7,6 +7,8 @@ function runtests()
 	s = run(Simulation())
 	d = discretize(SpBoxDiscretisation(), s)
 	c = Sqra.committor(d)
+
+	Experiment(Setup())
 end
 
 runtests()
