@@ -14,13 +14,15 @@ using Memoize
 export run, run_parallel, Simulation, SpBoxDiscretisation, discretize, committor
 
 function runbatch()
+	with_perma(true, true) do
 	batch(Simulation(nsteps=1_000_000), seeds=1:1, levels=vcat(3:20, 30, 40))
 	batch(Simulation(nsteps=10_000_000), seeds=1:1, levels=vcat(3:20, 30, 40))
 	batch(Simulation(nsteps=100_000_000), seeds=1:1, levels=vcat(3:20, 30, 40))
-	batch(Simulation(nsteps=1_000_000_000), seeds=1:20, levels=vcat(3:20, 30, 40))
+		batch(Simulation(nsteps=1_000_000_000), seeds=1:1, levels=vcat(3:20, 30, 40))
+	end
 end
 
-@memoize PermaDict(Dict(), "cache/batch_") function batch(sim=Simulation(); seeds=1:1, levels=3:14)
+@memoize PermaDict("cache/batch_") function batch(sim=Simulation(); seeds=1:1, levels=3:14)
 	Random.seed!(0)
 
 	# simulate trajectory
@@ -96,7 +98,7 @@ function run_parallel(sim::Simulation; seeds=1:Threads.nthreads())
 	return Sqra.Simulation(sim, x = x, u = u)
 end
 
-@memoize PermaDict(Dict(), "cache/sim_") function run(params::Simulation)
+@memoize PermaDict("cache/sim_") function run(params::Simulation)
 	@unpack_Simulation params
 
 	Random.seed!(seed)
@@ -168,7 +170,7 @@ end
 
 
 # warning: this part is old and should be rewritten as above
-@memoize PermaDict(Dict(), "cache/dis_") function discretize(discretization::VoronoiDiscretization, sim::Simulation)
+@memoize PermaDict("cache/dis_") function discretize(discretization::VoronoiDiscretization, sim::Simulation)
 	@unpack x, u, sigma = sim
 	@unpack prune = discretization
 	sigma = sim.sigma
@@ -202,7 +204,7 @@ end
 
 
 
-function committor(discretization, maxiter=1000)
+@memoize PermaDict("cache/com_") function committor(discretization, maxiter=1000)
 	@unpack Q, picks = discretization
     cl = classify(picks)
 
@@ -439,12 +441,102 @@ end
 
 function plot_normalized(x, c)
 	plot_trajectories(normalform(x),alpha=0.5, legend=false)
-	plot_triangles(normalform(x), alpha=0.3, line_z = c, legend=false, seriescolor=:roma)
+	plot_triangles!(normalform(x), alpha=0.3, line_z = c, legend=false, seriescolor=:roma)
+end
+
+using RecipesBase
+
+function sparsity(d::SpBoxDiscretisation)
+	l = d.ncells
+	dim, n = size(d.picks)
+	sparsity = n / l ^ dim * 100
+end
+
+@recipe function plot(d::SpBoxDiscretisation)
+	title --> "LJ-Cluster, SparseBoxes"
+
+
+	#@series begin
+		l = d.ncells
+		dim, n = size(d.picks)
+		sp = round(sparsity(d), sigdigits=2)
+		annotations := ((.0,-.1), ("l=$l,  n=$n ($sp%)", 8, :black, :left))
+		w, h = round.((d.boundary[1:2,2] .- d.boundary[1:2,1]) / d.ncells, sigdigits=2)
+		xticks --> [-w/2,w/2]
+		yticks --> [-h/2,h/2]
+		CloudPlot((d.picks, ))
+	#=end
+
+	@series begin
+		seriestype := :shape
+		aspect_ratio --> :equal
+		seriesalpha --> 0.1
+		series_color --> :beige
+		legend --> false
+		rectangle(w, h, x, y) = (x .+ [0,w,w,0], y .+ [0,0,h,h])
+		#x, y = minimum(d.picks, dims=2)
+		x, y = -.5, -.5
+		w, h = (d.boundary[1:2,2] .- d.boundary[1:2,1]) / d.ncells
+		rectangle(w,h, x, y)
+	end=#
+end
+
+@userplot CloudPlot
+
+""" plotting recipe for plotting multiple cluster states """
+@recipe function f(p::CloudPlot; select=:all, normalize=true, com=nothing)
+	x,  = p.args
+	legend --> false
+	colorbar --> true
+	aspect_ratio --> :equal
+	seriescolor --> :roma
+	#seriescolor --> :hawaii
+	seriesalpha --> 0.3
+
+	#preprocessing
+	n = size(x,2)
+	if isa(select, Integer)
+		i = 1:cld(size(x,2), select):size(x,2)
+	elseif isa(select, AbstractRange) || isa(select, Vector)
+		i = select
+	else
+		i = 1:n
+	end
+	x = x[:,i]
+	normalize && (x = normalform(x))
+
+
+	if isnothing(com)
+		z = [1]
+	else
+		z = com[i]
+	end
+
+
+	@series begin
+		seriestype := :path
+
+		line_z := (z')
+		n = x
+		xs = [n[1:2:end,:]; n[[1],:]]
+		ys = [n[2:2:end,:]; n[[2],:]]
+		xs, ys
+    end
+
+	@series begin
+		seriestype := :scatter
+		marker_z := repeat(z, inner=(1,3))
+
+		x[1:2:end,:]', x[2:2:end,:]'
+ 	end
+
 end
 
 
 
-#= Graveyard
+
+
+#= Graveyard †
 
 function snapshot(v::Vector)
     x = reshape(v, 2, div(length(v), 2))

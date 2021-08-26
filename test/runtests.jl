@@ -1,9 +1,12 @@
 using Sqra
 
+function runtests()
 
-s = run(Simulation())
-d = discretize(SpBoxDiscretisation(), s)
-c = Sqra.committor(d) 
+	include("sparseboxes.jl")
 
+	s = run(Simulation())
+	d = discretize(SpBoxDiscretisation(), s)
+	c = Sqra.committor(d)
+end
 
-include("sparseboxes.jl")
+runtests()

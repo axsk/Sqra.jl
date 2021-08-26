@@ -1,44 +1,75 @@
 using FileIO
 using Logging
 
-struct PermaDict{T}
-	d::T
+struct PermaDict
 	prefix::String
 end
 
 mutable struct PermaSettings
-	save::Bool
+	write::Bool
+	read::Bool
 end
 
-const ENABLE_PERMADICT = PermaSettings(false)
+const PERMADICT = PermaSettings(false, false)
 
-PermaDict(prefix="cache/") = PermaDict(Dict(), prefix)
+PermaDict() = PermaDict("cache/")
 
 function Base.empty!(d::PermaDict)
-	empty!(d.d)
+
+end
+
+function permasettings!(read, write)
+	PERMADICT.write = write
+	PERMADICT.read = read
+end
+
+function with_perma(f, read, write)
+	r = PERMADICT.read
+	w = PERMADICT.write
+	permasettings!(read, write)
+	x=f()
+	permasettings!(r, w)
+	return x
 end
 
 function Base.get!(f, d::PermaDict, k)
-	if ENABLE_PERMADICT.save == false
-		return f()
+	fn = d.prefix * string(mhash(k)) * ".jld2"
+	if PERMADICT.read && isfile(fn)
+		@info("reading $fn")
+		v = load(fn, "output")
+	else
+		e = @elapsed v = f()
+		if PERMADICT.write
+			@info("writing $fn")
+			save(fn, "input", k, "output", v, "elapsed", e)
+		end
 	end
-	if haskey(d.d, k)
+
+	return v
+end
+
+#=
+function Base.get!(f, d::PermaDict, k, settings=PERMADICT)
+	if settings.read && haskey(d.d, k)
 		@info("found cached entry")
 		v = d.d[k]
 	else
 		fn = d.prefix * string(mhash(k)) * ".jld2"
-		if isfile(fn)
+		if settings.read && isfile(fn)
 			@info("found saved entry $fn")
 			v = load(fn, "output")
 		else
 			v = f()
-			save(fn, "input", k, "output", v)
-			@info("saved new entry $fn")
+			if settings.save
+				save(fn, "input", k, "output", v)
+				@info("saved new entry $fn")
+			end
 		end
 		d.d[k] = v
 	end
 	return v
 end
+=#
 
 # workaround mutable structs
 # alternatively use AutoHashEquals.jl
