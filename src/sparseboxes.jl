@@ -5,7 +5,6 @@ using ProgressMeter
 export SparseBoxes
 
 struct SparseBoxes
-	points::Matrix{Float64}
 	ncells::Int
 	boundary::Matrix{Float64}
 	boxes::Matrix{Int}  # cartesian coordinates of the boxes
@@ -16,7 +15,7 @@ function SparseBoxes(points, ncells, boundary=autoboundary(points))
 	carts = cartesiancoords(points, ncells, boundary)
 	boxes, inds = uniquecols(carts, ncells)
 
-	SparseBoxes(points, ncells, boundary, boxes, inds)
+	SparseBoxes(ncells, boundary, boxes, inds)
 end
 
 adjacency(sb::SparseBoxes) = boxneighbors(sb.boxes, sb.ncells)
@@ -41,7 +40,7 @@ end
 
 function cartesiancoords(points, ncells, boundary=autoboundary(points))
 	#affine transformation of boundary box onto the unit cube (ncells)
-	normalized = (points .- boundary[:,1]) ./ (boundary[:,2] - boundary[:,1]) * ncells  # (289)
+	normalized = (points .- boundary[:,1]) ./ (boundary[:,2] - boundary[:,1]) .* ncells  # (289)
 	cartesians = ceil.(Int, normalized)  # round to next int
     cartesians[normalized.==0] .= 1  # and adjust for left boundary
 	return cartesians
