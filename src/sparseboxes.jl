@@ -11,12 +11,31 @@ struct SparseBoxes
 	inds::Vector{Vector{Int}}  # indices to the points contained in each box
 end
 
+
 function SparseBoxes(points, ncells, boundary=autoboundary(points))
 	carts = cartesiancoords(points, ncells, boundary)
 	boxes, inds = uniquecols(carts, ncells)
 
 	SparseBoxes(ncells, boundary, boxes, inds)
 end
+
+
+""" merge two SparseBoxes, corresponding to SparseBoxes of the concat trajectory.
+`offset` is the length of the trajectory underlying `a` """
+function merge(a::SparseBoxes, b::SparseBoxes, offset::Int)
+	@assert a.ncells == b.ncells
+	@assert a.boundary == b.boundary
+
+	boxes = hcat(a.boxes, b.boxes)
+	binds = map(i -> i .+ offset, b.inds)
+	inds = vcat(a.inds, binds)
+
+	boxes, iis = uniquecols(boxes, a.ncells)
+	inds = map(ii->reduce(vcat, inds[ii]), iis)
+
+	return SparseBoxes(a.ncells, a.boundary, boxes, inds)
+end
+
 
 adjacency(sb::SparseBoxes) = boxneighbors(sb.boxes, sb.ncells)
 

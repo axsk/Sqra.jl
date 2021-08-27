@@ -125,6 +125,13 @@ end
 	@pack_Simulation
 end
 
+function extend(s::Simulation, n)
+	e = Simulation(s, x0 = s.x[:, end], nsteps=n)
+	e = run(e)
+	Simulation(s, x=hcat(s.x, e.x[:, 2:end]), u = vcat(s.u, e.u[2:end]))
+end
+
+
 
 
 @userplot CloudPlot

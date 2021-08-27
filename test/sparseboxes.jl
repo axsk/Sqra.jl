@@ -3,7 +3,7 @@ using Profile, Random, BenchmarkTools, Test
 using Sqra: sparseboxpick, sparseboxpick_old
 
 function benchbox(n=100000, k=10, d=6)
-	Random.seed!(1)	
+	Random.seed!(1)
 	points = rand(d, n)
 	boundary = autoboundary(points)
 	boxify(points, k, boundary)
@@ -22,13 +22,13 @@ function benchboth(n=10000, k=10, d=6)
 	boundary = autoboundary(points)
 	u = rand(n)
 
-	begin 
+	begin
 		A, i = sparseboxpick_old(points, k, u, boundary)
 		p = sortperm(collect(eachcol(points)))
 		a = points[:,p]
 	end
 
-	begin 
+	begin
 		A, i = sparseboxpick(points, k, u, boundary)
 	end
 end
@@ -56,5 +56,18 @@ function test_spboxes()
 	@assert all(A .== @show (pairwise(Cityblock(), cartesians) .== 1))
 end
 
+function test_merge(n=5, d=2, l=2)
+	x = rand(d,2*n)
+	bnd = [0 1; 0 1]
+	b1 = SparseBoxes(x[:,1:n], l, bnd)
+	b2 = SparseBoxes(x[:,(1:n) .+ n], l, bnd)
+	b  = SparseBoxes(x, l, bnd)
+
+	bm = Sqra.merge(b1,b2, n)
+	@test b.boxes == bm.boxes
+	@test b.inds  == bm.inds
+end
+
+test_merge()
 
 @test (test_sparseboxpick(); true)

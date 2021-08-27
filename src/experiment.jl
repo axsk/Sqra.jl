@@ -46,6 +46,15 @@ function trim(s::SparseBoxes, n)
 	SparseBoxes(sb.ncells, sb.boundary, sb.boxes[:,select], inds[select])
 end
 
+function extend(s::Experiment, n)
+	sim = extend(s.sim, n)
+	sb = merge(s.sb, SparseBoxes(sim.x[:, end-n+1:end], s.sb.ncells, s.sb.boundary), size(s.sim.x, 2))
+	Q, picks = sqra(sb, sim.u, sim.sigma)
+	cl = classify(sim.x[:, picks])
+	c = committor(Q, cl, maxiter = 1000)
+	Experiment(sim, sb, Q, picks, c)
+end
+
 
 
 ### Voronoi picking
