@@ -118,9 +118,9 @@ end
 	Random.seed!(seed)
 	potential(x) = lennard_jones_harmonic(x; epsilon=epsilon, sigma=r0, harm=harm)
 
-	x = eulermaruyama(x0 |> vec, potential, sigma, dt, nsteps, maxdelta=maxdelta,
+	x, u = eulermaruyama(x0 |> vec, potential, sigma, dt, nsteps, maxdelta=maxdelta,
 		progressbar=Threads.threadid() == 1)
-	u = mapslices(potential, x, dims=1) |> vec
+	#u = mapslices(potential, x, dims=1) |> vec
 
 	@pack_Simulation
 end

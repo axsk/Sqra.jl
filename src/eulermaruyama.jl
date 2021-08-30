@@ -1,5 +1,5 @@
 using ProgressMeter
-using ForwardDiff
+using ForwardDiff, DiffResults
 
 function eulermarujamatrajectories(x0::Matrix, potential::Function, sigma::Real, dt::Real, steps::Integer; branches::Integer=1, maxdelta=Inf, progressbar=true)
     dim, samples = size(x0)
@@ -29,27 +29,31 @@ function eulermaruyama(x0::AbstractVector, potential::Function, sigma::Real, dt:
     dim = length(x0)
     p = Progress(steps; dt=1, desc="Euler Maruyama simulation", enabled=progressbar)
 
-    grad = similar(x0)
+    grad = DiffResults.GradientResult(x0)
     cfg = ForwardDiff.GradientConfig(potential, x0)
 
     x = copy(x0)
-    xs = similar(x0, dim, steps+1)
-    xs[:, 1] = x
+    xs = similar(x0, dim, steps)
+	us = similar(x0, steps)
 
-    for t in 2:steps+1
-		for i in 1:1
-			ForwardDiff.gradient!(grad, potential, x, cfg)
-			delta = sqrt(sum(abs2, grad))  * dt
-			if delta > maxdelta
-				n = ceil(Int, delta / maxdelta)
-				x = eulermaruyama(x, potential, sigma, dt/n, n, maxdelta=maxdelta, progressbar=false)[:, end]
-			else
-				x .+= -grad * dt .+ sigma * sqrt(dt) * randn(dim) 
-			end
-			xs[:, t] = x
+    for t in 1:steps
+		ForwardDiff.gradient!(grad, potential, x, cfg)
+		us[t] = DiffResults.value(grad)
+		g = DiffResults.gradient(grad)
+
+		delta = sqrt(sum(abs2, g))  * dt
+		if delta > maxdelta
+			n = ceil(Int, delta / maxdelta)
+			x = eulermaruyama(x, potential, sigma, dt/n, n, maxdelta=maxdelta, progressbar=false)[1][:, end]
+		else
+			x .+= -g * dt .+ sigma * sqrt(dt) * randn(dim)
 		end
+
+		xs[:, t] = x
         next!(p)
 		#yield()
     end
-    return xs
+	us = [us[2:end]; potential(x)]  # because we stored the potential of the previous x
+
+    return xs, us
 end
