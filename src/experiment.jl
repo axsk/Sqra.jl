@@ -25,6 +25,8 @@ function Experiment(c::Setup)
 	Experiment(sim, sb, Q, picks, c)
 end
 
+picks(e::Experiment) = e.sim.x[:, e.picks]
+
 
 function sqra(sb::SparseBoxes, u, sigma)
 	A = adjacency(sb)
@@ -53,6 +55,54 @@ function extend(s::Experiment, n)
 	cl = classify(sim.x[:, picks])
 	c = committor(Q, cl, maxiter = 1000)
 	Experiment(sim, sb, Q, picks, c)
+end
+
+function sparsity(e::Experiment)
+	l = e.sb.ncells
+	dim, n = size(e.sb.boxes)
+	sparsity = n / l ^ dim * 100
+end
+
+
+using Printf
+@recipe function plot(e::Experiment)
+	sb = e.sb
+	l = sb.ncells
+	x = picks(e)
+	dim, nb = size(x)
+	n = size(e.sim.x, 2)
+	sp = round(sparsity(e), sigdigits=2)
+	w, h = round.((sb.boundary[1:2,2] .- sb.boundary[1:2,1]) / sb.ncells, sigdigits=2)
+
+	title --> "LJ-Cluster, SparseBoxes"
+	n = @sprintf "%.1e" n
+	annotations := ((.0,-.1), ("l=$l,  ns = $n, nb=$nb ($sp%)", 8, :black, :left))
+	xticks --> [-w/2,w/2]
+	yticks --> [-h/2,h/2]
+	com --> e.committor
+	CloudPlot((x, ))
+end
+
+function logspace(a,b,n)
+	exp.(range(log(a),log(b), length=n))
+end
+
+function logspace(::Type{Int}, a, b, n)
+	round.(Int, logspace(a,b,n))
+end
+
+function errors(es::Vector{Experiment})
+	n = length(es) - 1
+	ee = es[end]
+	errs = zeros(n)
+	Threads.@threads for i in 1:n
+		e = es[i]
+		t = @elapsed errs[i] = Sqra.sp_mse(
+			e.committor, ee.committor,
+			e.sb, ee.sb)
+		#@info "$t seconds for MSE l=$(e.sb.ncells)"
+	end
+	return errs
 end
 
 

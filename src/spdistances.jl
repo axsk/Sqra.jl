@@ -11,7 +11,7 @@ function sp_mse(x1, x2, d1, d2)
 	for i in 1:length(I)
 		e += (x1[I[i]] - x2[J[i]])^2 * V[i]
 	end
-	e
+	e / length(V)
 end
 
 sb_overlap(a, b, k, l) = sbv_linear(a, b, k, l)

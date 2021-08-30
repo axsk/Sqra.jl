@@ -128,16 +128,19 @@ end
 function extend(s::Simulation, n)
 	e = Simulation(s, x0 = s.x[:, end], nsteps=n)
 	e = run(e)
-	Simulation(s, x=hcat(s.x, e.x[:, 2:end]), u = vcat(s.u, e.u[2:end]))
+	Simulation(s, x=hcat(s.x, e.x[:, 2:end]), u = vcat(s.u, e.u[2:end]), nsteps=s.nsteps+n)
 end
-
 
 
 
 @userplot CloudPlot
 
+@recipe function f(s::Simulation)
+	CloudPlot((s.x, ))
+end
+
 """ plotting recipe for plotting multiple cluster states """
-@recipe function f(p::CloudPlot; select=:all, normalize=true, com=nothing)
+@recipe function f(p::CloudPlot; select=:all, normalize=true, com=nothing, triangles=false)
 	x,  = p.args
 	legend --> false
 	colorbar --> true
@@ -158,23 +161,22 @@ end
 	x = x[:,i]
 	normalize && (x = normalform(x))
 
-
 	if isnothing(com)
 		z = [1]
 	else
 		z = com[i]
 	end
 
-
-	@series begin
-		seriestype := :path
-
-		line_z := (z')
-		n = x
-		xs = [n[1:2:end,:]; n[[1],:]]
-		ys = [n[2:2:end,:]; n[[2],:]]
-		xs, ys
-    end
+	if triangles
+		@series begin
+			seriestype := :path
+			line_z := (z')
+			n = x
+			xs = [n[1:2:end,:]; n[[1],:]]
+			ys = [n[2:2:end,:]; n[[2],:]]
+			xs, ys
+		end
+	end
 
 	@series begin
 		seriestype := :scatter
