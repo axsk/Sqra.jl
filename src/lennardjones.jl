@@ -1,5 +1,18 @@
 export Simulation, run
 
+@with_kw struct Simulation
+	x0 = x0gen
+	epsilon = 1
+    r0 = 1/3
+    harm = 1
+    sigma = 1/2
+    dt=0.001
+    nsteps=100000
+    maxdelta=0.1
+	seed = 1
+	x=nothing
+	u=nothing
+end
 
 const x0gen =  [0.19920158482463968
 0.13789462153196408
@@ -70,19 +83,7 @@ function normalform(x)
 end
 
 
-@with_kw struct Simulation
-	x0 = x0gen
-	epsilon = 1
-    r0 = 1/3
-    harm = 1
-    sigma = 1/2
-    dt=0.001
-    nsteps=100000
-    maxdelta=0.1
-	seed = 1
-	x=nothing
-	u=nothing
-end
+
 
 using Setfield
 
@@ -128,7 +129,7 @@ end
 function extend(s::Simulation, n)
 	e = Simulation(s, x0 = s.x[:, end], nsteps=n)
 	e = run(e)
-	Simulation(s, x=hcat(s.x, e.x[:, 2:end]), u = vcat(s.u, e.u[2:end]), nsteps=s.nsteps+n)
+	Simulation(s, x=hcat(s.x, e.x), u = vcat(s.u, e.u), nsteps=s.nsteps+n)
 end
 
 

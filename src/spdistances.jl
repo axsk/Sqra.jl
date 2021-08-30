@@ -5,15 +5,18 @@ using SparseArrays
 # mean squared error of two scalar functions (not densities!) on two respective
 # sparse box distributions integrated over their common support
 # returns the error and the common volume
-function sp_mse(x1, x2, d1, d2)
+function sp_mse(x1, x2, d1, d2, w1=ones(length(x1)), w2=ones(length(x2)))
 	v = sb_overlap(d1,d2)
 	I,J,V = findnz(v)
-	e = 0
-	for i in 1:length(I)
-		e += (x1[I[i]] - x2[J[i]])^2 * V[i]
+	e = 0.
+	ws = 0.
+	for (i, j, v) in zip(I, J, V) #i in 1:length(I)
+		w = v * w1[i] * w2[j]
+		ws += w
+		e += (x1[i] - x2[j])^2 * w
 	end
 	#@show sum(V)
-	e / sum(V)
+	e / ws
 end
 
 sb_overlap(a, b, k, l) = sbv_linear(a, b, k, l)

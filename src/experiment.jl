@@ -39,6 +39,12 @@ end
 beta_to_sigma(beta) = sqrt(2/beta)
 sigma_to_beta(sigma) = 2 / sigma^2
 
+function stationary(e::Experiment)
+	beta = sigma_to_beta(e.sim.sigma)
+	u = e.sim.u[e.picks]
+	p = exp.(-u .* (beta / 2))
+	p / sum(p)
+end
 
 min_u_inds(inds::Vector{Vector{Int}}, u::Vector) = map(i -> i[argmin(u[i])], inds)
 
@@ -92,14 +98,15 @@ function logspace(::Type{Int}, a, b, n)
 end
 
 function errors(es::Vector{Experiment})
-	n = length(es) - 1
+	n = length(es)# - 1
 	ee = es[end]
+	p = stationary(ee) * length(ee.picks)  # dpi / dlebesgue
 	errs = zeros(n)
 	Threads.@threads for i in 1:n
 		e = es[i]
 		t = @elapsed errs[i] = Sqra.sp_mse(
-			e.committor, ee.committor,
-			e.sb, ee.sb)
+			ee.committor, e.committor,
+			ee.sb, e.sb, p)
 		#@info "$t seconds for MSE l=$(e.sb.ncells)"
 	end
 	return errs
