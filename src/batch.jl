@@ -129,20 +129,6 @@ end
 	return discretization
 end
 
-
-### Committor computation
-
-function changepoints(c)
-	cc = copy(c)
-	for i in 2:length(c)
-		cc[i] != 0 && continue
-		cc[i] = cc[i-1]
-	end
-	findall(diff(cc) .!= 0).+1
-end
-
-
-
 #=
 function convergence_error(r::NamedTuple, ns)
 	errors = []

@@ -112,6 +112,11 @@ function errors(es::Vector{Experiment})
 	return errs
 end
 
+function error(ref::Experiment, trial::Experiment)
+	e1, e2 = ref, trial
+	p = stationary(e1) * length(e1.picks)
+	Sqra.sp_mse(e1.committor, e2.committor, e1.sb, e2.sb, p)
+end
 
 
 ### Voronoi picking
@@ -167,11 +172,13 @@ function committor(Q, cl; maxiter=1000)
 	return c
 end
 
+#=
 @memoize PermaDict("cache/com_") function committor(discretization, maxiter=1000)
 	@unpack Q, picks = discretization
     cl = classify(picks)
 	return committor(Q, cl; maxiter=maxiter)
 end
+=#
 
 
 
