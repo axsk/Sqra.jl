@@ -71,6 +71,11 @@ end
 	picks = nothing
 end
 
+@memoize PermaDict("cache/com_") function committor(discretization::SpBoxDiscretisation, maxiter=1000)
+	@unpack Q, picks = discretization
+    cl = classify(picks)
+	return committor(Q, cl; maxiter=maxiter)
+end
 
 @memoize PermaDict("cache/dis_") function discretize(d::SpBoxDiscretisation, sim::Simulation)
 

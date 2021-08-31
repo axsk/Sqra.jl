@@ -172,15 +172,6 @@ function committor(Q, cl; maxiter=1000)
 	return c
 end
 
-#=
-@memoize PermaDict("cache/com_") function committor(discretization, maxiter=1000)
-	@unpack Q, picks = discretization
-    cl = classify(picks)
-	return committor(Q, cl; maxiter=maxiter)
-end
-=#
-
-
 
 " solve the committor system where we encode A==1 and B as anything != 0 or 1"
 function committor_system(Q, classes)
