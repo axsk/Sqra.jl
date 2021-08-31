@@ -12,7 +12,7 @@ struct SparseBoxes
 end
 
 
-function SparseBoxes(points, ncells, boundary=autoboundary(points))
+function SparseBoxes(points::Matrix, ncells::Int, boundary::Matrix=autoboundary(points))
 	carts = cartesiancoords(points, ncells, boundary)
 	boxes, inds = uniquecols(carts, ncells)
 

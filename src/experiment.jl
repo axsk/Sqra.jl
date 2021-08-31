@@ -6,6 +6,7 @@ export Setup, Experiment
 	sim = Simulation()
 	boundary = [-ones(6) ones(6)] .* 0.8 # in sb
 	level = 6
+	solveriter = 1000
 end
 
 struct Experiment
@@ -17,11 +18,11 @@ struct Experiment
 end
 
 function Experiment(c::Setup)
-	sim = run(c.sim)
-	sb = SparseBoxes(sim.x, c.level, c.boundary)
-	Q, picks = sqra(sb, sim.u, sim.sigma)
-	cl = classify(sim.x[:, picks])
-	c = committor(Q, cl, maxiter = 1000)
+	@time sim = run(c.sim)
+	@time sb = SparseBoxes(sim.x, c.level, c.boundary)
+	@time Q, picks = sqra(sb, sim.u, sim.sigma)
+	@time cl = classify(sim.x[:, picks])
+	@time c = committor(Q, cl, maxiter = c.solveriter)
 	Experiment(sim, sb, Q, picks, c)
 end
 

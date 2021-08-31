@@ -18,17 +18,20 @@ function Base.empty!(d::PermaDict)
 
 end
 
-function permasettings!(read, write)
+function CACHE!(read=true, write=true)
 	PERMADICT.write = write
 	PERMADICT.read = read
+	read, write
 end
 
-function with_perma(f, read, write)
+
+
+function with_perma(f, read=true, write=true)
 	r = PERMADICT.read
 	w = PERMADICT.write
-	permasettings!(read, write)
+	CACHE!(read, write)
 	x=f()
-	permasettings!(r, w)
+	CACHE!(r, w)
 	return x
 end
 
