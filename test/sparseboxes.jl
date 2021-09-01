@@ -58,14 +58,14 @@ end
 
 function test_merge(n=5, d=2, l=2)
 	x = rand(d,2*n)
-	bnd = [0 1; 0 1]
+	bnd = [0. 1; 0 1]
 	b1 = SparseBoxes(x[:,1:n], l, bnd)
 	b2 = SparseBoxes(x[:,(1:n) .+ n], l, bnd)
 	b  = SparseBoxes(x, l, bnd)
 
 	bm = Sqra.merge(b1,b2, n)
-	@test b.boxes == bm.boxes
-	@test b.inds  == bm.inds
+	@test collect(Sqra.boxes(b)) == collect(Sqra.boxes(bm))
+	@test collect(Sqra.inds(b))  == collect(Sqra.inds(bm))
 end
 
 test_merge()

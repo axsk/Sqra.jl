@@ -2,27 +2,36 @@ using Distances
 using SparseArrays
 using ProgressMeter
 
+
+
+include("sbdict.jl")
+
+
 export SparseBoxes
 
-struct SparseBoxes
+struct SparseBoxesMatrix
 	ncells::Int
 	boundary::Matrix{Float64}
 	boxes::Matrix{Int}  # cartesian coordinates of the boxes
 	inds::Vector{Vector{Int}}  # indices to the points contained in each box
 end
 
+SparseBoxes = SparseBoxesMatrix
 
-function SparseBoxes(points::Matrix, ncells::Int, boundary::Matrix=autoboundary(points))
+boxes(s::SparseBoxesMatrix) = s.boxes
+inds(s::SparseBoxesMatrix) = s.inds
+
+function SparseBoxesMatrix(points::Matrix, ncells::Int, boundary::Matrix=autoboundary(points))
 	carts = cartesiancoords(points, ncells, boundary)
 	boxes, inds = uniquecols(carts, ncells)
 
-	SparseBoxes(ncells, boundary, boxes, inds)
+	SparseBoxesMatrix(ncells, boundary, boxes, inds)
 end
 
 
-""" merge two SparseBoxes, corresponding to SparseBoxes of the concat trajectory.
+""" merge two SparseBoxesMatrix, corresponding to SparseBoxesMatrix of the concat trajectory.
 `offset` is the length of the trajectory underlying `a` """
-function merge(a::SparseBoxes, b::SparseBoxes, offset::Int)
+function merge(a::SparseBoxesMatrix, b::SparseBoxesMatrix, offset::Int)
 	@assert a.ncells == b.ncells
 	@assert a.boundary == b.boundary
 
@@ -33,20 +42,20 @@ function merge(a::SparseBoxes, b::SparseBoxes, offset::Int)
 	boxes, iis = uniquecols(boxes, a.ncells)
 	inds = map(ii->reduce(vcat, inds[ii]), iis)
 
-	return SparseBoxes(a.ncells, a.boundary, boxes, inds)
+	return SparseBoxesMatrix(a.ncells, a.boundary, boxes, inds)
 end
 
 
-adjacency(sb::SparseBoxes) = boxneighbors(sb.boxes, sb.ncells)
+adjacency(sb::SparseBoxesMatrix) = boxneighbors(sb.boxes, sb.ncells)
 
 """ chance to discover a new box per samlpe at the tail of the data """
-function convergence(s::SparseBoxes, tailpercent = 0.05)
+function convergence(s::SparseBoxesMatrix, tailpercent = 0.05)
 	discoveries = map(first, s.inds) |> sort |> diff
 	tail = ceil(Int, length(discoveries) * (1 - tailpercent))
 	1 / mean(discoveries[tail:end])
 end
 
-function convergencedata(s::SparseBoxes)
+function convergencedata(s::SparseBoxesMatrix)
 	discoveries = sort(first.(s.inds))
 	discoveries, 1:length(discoveries)
 end

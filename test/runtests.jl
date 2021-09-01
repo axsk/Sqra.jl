@@ -2,13 +2,13 @@ using Test
 using Sqra
 
 @testset "Experiment" begin
-	Experiment(Setup())
+	@time Experiment(Setup())
 end
 
 @testset "Sparse Boxes" begin
 	include("sparseboxes.jl")
 end
-
+#=
 @testset "SpBoxDiscretisation" begin
 	s = run(Simulation())
 	d = discretize(SpBoxDiscretisation(), s)
@@ -24,3 +24,4 @@ end
 
 	@test c == e.committor
 end
+=#

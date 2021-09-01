@@ -49,7 +49,7 @@ function traverse(n::Node, prefix=Int[])
         return [prefix], [n.val]
     end
 
-    ccat = ((p1,v1), (p2,v2)) -> ([p1;p2], [v1;v2]) 
+    ccat = ((p1,v1), (p2,v2)) -> ([p1;p2], [v1;v2])
     reducer(a,b) = vcat.(a,b)
 
     mapper((k,v)) = traverse(v, [prefix; k])
@@ -57,11 +57,42 @@ function traverse(n::Node, prefix=Int[])
 
     #@show iterable
 
-    mapreduce(mapper, reducer,  iterable; init= (Vector{Int}[],Vector{Int}[])) 
+    mapreduce(mapper, reducer,  iterable)#; init= (Vector{Int}[],Vector{Int}[]))
 end
 
-function performance(n=10_000_000,d=6,l=5)
-    x = rand(d, n)
+function traverse2(t, D, n)
+	x = Vector{Int}[]
+	y = Vector{Int}[]
+	coords = zeros(Int, D)
+
+	i=0
+
+	nodeiter(n) = Iterators.Stateful(n.val)
+	iters=[nodeiter(t)]
+
+	while !isempty(iters)
+		d=length(iters)
+		iter=iters[end]
+		if isempty(iter)
+			pop!(iters)
+		else
+			k, n = popfirst!(iter)
+			coords[d] = k
+			if d < D
+				push!(iters, nodeiter(n))
+			else
+				push!(x, copy(coords))
+				push!(y, n.val)
+			end
+		end
+	end
+	x, y
+end
+
+
+
+
+function performance(n=10_000_000,d=6,l=5; x=rand(d,n ))
     @time begin
         t = trie(x, l)
         traverse(t)
@@ -76,4 +107,24 @@ function performance(n=10_000_000,d=6,l=5)
     ()
 end
 
-for (k,v) in node
+
+using Sqra
+function performance2(n=1_000_000)
+	s=run(Simulation(nsteps=n))
+	x=s.x
+	@profile begin
+
+	@time begin
+		b=SparseBoxes(s.x, 6)
+		A = Sqra.adjacency(b)
+	end
+
+	@time begin
+		x = Sqra.cartesiancoords(s.x, 6)
+		d = dict(x)
+		B = neighbours(d,6)
+	end
+	A,B
+
+	end
+end

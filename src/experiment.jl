@@ -18,11 +18,11 @@ struct Experiment
 end
 
 function Experiment(c::Setup)
-	@time sim = run(c.sim)
-	@time sb = SparseBoxes(sim.x, c.level, c.boundary)
-	@time Q, picks = sqra(sb, sim.u, sim.sigma)
-	@time cl = classify(sim.x[:, picks])
-	@time c = committor(Q, cl, maxiter = c.solveriter)
+	sim = run(c.sim)
+	sb = SparseBoxes(sim.x, c.level, c.boundary)
+	Q, picks = sqra(sb, sim.u, sim.sigma)
+	cl = classify(sim.x[:, picks])
+	c = committor(Q, cl, maxiter = c.solveriter)
 	Experiment(sim, sb, Q, picks, c)
 end
 
@@ -31,9 +31,9 @@ picks(e::Experiment) = e.sim.x[:, e.picks]
 
 function sqra(sb::SparseBoxes, u, sigma)
 	A = adjacency(sb)
-	inds = min_u_inds(sb.inds, u)
-	Q = sqra(u[inds], A, sigma_to_beta(sigma))
-	return Q, inds
+	is = min_u_inds(inds(sb), u)
+	Q = sqra(u[is], A, sigma_to_beta(sigma))
+	return Q, is
 end
 
 
@@ -47,7 +47,7 @@ function stationary(e::Experiment)
 	p / sum(p)
 end
 
-min_u_inds(inds::Vector{Vector{Int}}, u::Vector) = map(i -> i[argmin(u[i])], inds)
+min_u_inds(inds, u::Vector) = map(i -> i[argmin(u[i])], inds)
 
 function trim(s::SparseBoxes, n)
 	inds = map(is->filter(i->i<=n, is), s.inds)
