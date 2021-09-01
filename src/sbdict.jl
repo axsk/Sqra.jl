@@ -9,13 +9,14 @@ end
 
 function SparseBoxesDict(x::Matrix, level::Int, boundary::Matrix=autoboundary(x))
     carts = cartesiancoords(x, level, boundary)
-    d = dict(carts)
+    d = sbdict(carts, level)
     SparseBoxesDict(level, boundary,d)
 end
 
 boxes(b::SparseBoxesDict) = keys(b.dict)
 boxmatrix(b::SparseBoxesDict) = reduce(hcat, collect(boxes(b)))
 inds(b::SparseBoxesDict) = values(b.dict)
+level(b::SparseBoxesDict) = b.level
 
 
 function merge(a, b, offset)
@@ -35,13 +36,14 @@ end
 
 adjacency(d::SparseBoxesDict) = neighbours(d.dict)
 
-dict(x::Matrix{Int}) = dict(x, SVector{size(x,1), Int})
+sbdict(x::Matrix{Int}, level) = sbdict(x, level, SVector{size(x,1), Int})
 
-function dict(x::Matrix{Int}, ::Type{T}) where {T}
-	d = SortedDict{T, Vector{Int}}()
+function sbdict(x::Matrix{Int}, level, ::Type{T}) where {T}
+	d = SortedDict{T, Vector{UInt32}}()
 	for (i, col) in enumerate(eachcol(x))
 		c = T(col)
-		vs = get!(d, c, Int[])
+		all(1 .<= c .<= level) || continue
+		vs = get!(d, c, [])
 		push!(vs, i)
 	end
 	d

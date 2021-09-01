@@ -777,7 +777,7 @@ uuid = "276daf66-3868-5448-9aa4-cd146d93841b"
 version = "1.6.1"
 
 [[Sqra]]
-deps = ["Clp", "DiffResults", "Distances", "FileIO", "ForwardDiff", "IOCapture", "IterativeSolvers", "JLD2", "JuMP", "LinearAlgebra", "Logging", "Memoize", "Parameters", "Plots", "Printf", "ProgressMeter", "Random", "RecipesBase", "Setfield", "SparseArrays", "StaticArrays", "Statistics", "StatsBase"]
+deps = ["Clp", "DataStructures", "DiffResults", "Distances", "FileIO", "ForwardDiff", "IOCapture", "IterativeSolvers", "JLD2", "JuMP", "LinearAlgebra", "Logging", "Memoize", "Parameters", "Plots", "Printf", "ProgressMeter", "Random", "RecipesBase", "Setfield", "SparseArrays", "StaticArrays", "Statistics", "StatsBase"]
 path = ".."
 uuid = "561b40b7-a0ab-4084-b14c-be45599a2ca9"
 version = "0.1.0"

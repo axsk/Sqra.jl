@@ -16,10 +16,12 @@ struct SparseBoxesMatrix
 	inds::Vector{Vector{Int}}  # indices to the points contained in each box
 end
 
-SparseBoxes = SparseBoxesMatrix
+SparseBoxes = SparseBoxesDict
 
 boxes(s::SparseBoxesMatrix) = s.boxes
+boxmatrix(s::SparseBoxesMatrix) = s.boxes
 inds(s::SparseBoxesMatrix) = s.inds
+level(s::SparseBoxesMatrix) = s.ncells
 
 function SparseBoxesMatrix(points::Matrix, ncells::Int, boundary::Matrix=autoboundary(points))
 	carts = cartesiancoords(points, ncells, boundary)

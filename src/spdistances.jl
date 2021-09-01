@@ -20,7 +20,7 @@ function sp_mse(x1, x2, d1, d2, w1=ones(length(x1)), w2=ones(length(x2)))
 end
 
 sb_overlap(a, b, k, l) = sbv_linear(a, b, k, l)
-sb_overlap(a::SparseBoxes, b::SparseBoxes) = sb_overlap(a.boxes, b.boxes, a.ncells, b.ncells)
+sb_overlap(a::SparseBoxes, b::SparseBoxes) = sb_overlap(boxmatrix(a), boxmatrix(b), level(a), level(b))
 
 ##
 
