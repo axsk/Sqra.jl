@@ -12,7 +12,7 @@ end
 struct Experiment
 	sim::Simulation
 	sb::SparseBoxes
-	Q::Matrix{Float64}
+	Q::SparseMatrixCSC{Float64, Int64}
 	picks::Vector{Int}
 	committor
 end
