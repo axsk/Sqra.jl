@@ -1,10 +1,13 @@
 using StaticArrays, SparseArrays, DataStructures
 
-
 struct SparseBoxesDict{D}
 	level::Int
 	boundary::Matrix{Float64}
     dict::D
+end
+
+function Base.show(io::IO, sb::SparseBoxesDict)
+	Base.print(io, "SparseBoxes of level $(sb.level) with $(length(sb.dict)) elements")
 end
 
 function SparseBoxesDict(x::Matrix, level::Int, boundary::Matrix=autoboundary(x))

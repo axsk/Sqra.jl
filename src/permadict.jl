@@ -35,16 +35,21 @@ function with_perma(f, read=true, write=true)
 	return x
 end
 
+macro cache(exp)
+	dump(exp)
+end
+
 function Base.get!(f, d::PermaDict, k)
 	fn = d.prefix * string(mhash(k)) * ".jld2"
 	if PERMADICT.read && isfile(fn)
-		@info("reading $fn")
+		#@info("reading $fn")
 		v = load(fn, "output")
 	else
 		e = @elapsed v = f()
 		if PERMADICT.write
 			@info("writing $fn")
-			save(fn, "input", k, "output", v, "elapsed", e)
+			save(fn, #"input", k,
+				"output", v, "elapsed", e)
 		end
 	end
 

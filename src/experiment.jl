@@ -3,49 +3,63 @@
 export Setup, Experiment
 
 @with_kw struct Setup
-	sim = Simulation()
-	boundary = [-ones(6) ones(6)] .* 0.8 # in sb
+	model = TripleWell()
+	x0 = x0default(model)
+	dt = 0.1
+	N = 100
+	maxdelta = Inf  # adaptive stepsize control if < Inf
+	seed = 1
+	progressbar = true
 	level = 6
 	solveriter = 1000
 end
 
-struct Experiment
-	sim::Simulation
-	sb::SparseBoxes
-	Q::SparseMatrixCSC{Float64, Int64}
-	picks::Vector{Int}
-	committor
+function Experiment(setup::Setup)
+	@unpack_Setup setup
+
+	x, u = eulermaruyama(x0, potential(model), sigma(model), dt, N,
+						 maxdelta = maxdelta, progressbar = progressbar)
+	sb = SparseBoxes(x, level, model.box)
+	Q, picks = sqra(sb, u, sigma(model))
+	classes = classify(model, x[:, picks])
+	cmt = committor(Q, classes, maxiter = solveriter)
+
+	d = @locals
+	(; d...)
 end
 
-function Experiment(c::Setup)
-	sim = run(c.sim)
-	sb = SparseBoxes(sim.x, c.level, c.boundary)
-	Q, picks = sqra(sb, sim.u, sim.sigma)
-	cl = classify(sim.x[:, picks])
-	c = committor(Q, cl, maxiter = c.solveriter)
-	Experiment(sim, sb, Q, picks, c)
-end
 
-picks(e::Experiment) = e.sim.x[:, e.picks]
+LJSetup = Setup(model=LJCluster(), dt=0.001, N=1_000_000, maxdelta=0.1)
+
+
+#picks(e::Experiment) = e.sim.x[:, e.picks]
 
 
 function sqra(sb::SparseBoxes, u, sigma)
 	A = adjacency(sb)
 	is = min_u_inds(inds(sb), u)
 	Q = sqra(u[is], A, sigma_to_beta(sigma))
+	fixinf!(Q)
 	return Q, is
+end
+
+# TODO: check if this is reasonable
+function fixinf!(Q)
+	Q[(!isfinite).(Q)] .= 0
 end
 
 
 beta_to_sigma(beta) = sqrt(2/beta)
 sigma_to_beta(sigma) = 2 / sigma^2
 
+#=
 function stationary(e::Experiment)
 	beta = sigma_to_beta(e.sim.sigma)
 	u = e.sim.u[e.picks]
 	p = exp.(-u .* (beta / 2))
 	p / sum(p)
 end
+=#
 
 min_u_inds(inds, u::Vector) = map(i -> i[argmin(u[i])], inds)
 
@@ -55,6 +69,7 @@ function trim(s::SparseBoxes, n)
 	SparseBoxes(sb.ncells, sb.boundary, sb.boxes[:,select], inds[select])
 end
 
+#=
 function extend(s::Experiment, n)
 	sim = extend(s.sim, n)
 	sb = merge(s.sb, SparseBoxes(sim.x[:, end-n+1:end], s.sb.ncells, s.sb.boundary), size(s.sim.x, 2))
@@ -63,7 +78,9 @@ function extend(s::Experiment, n)
 	c = committor(Q, cl, maxiter = 1000)
 	Experiment(sim, sb, Q, picks, c)
 end
+=#
 
+#=
 function sparsity(e::Experiment)
 	l = e.sb.ncells
 	dim, n = size(e.sb.boxes)
@@ -89,6 +106,7 @@ using Printf
 	com --> e.committor
 	CloudPlot((x, ))
 end
+=#
 
 function logspace(a,b,n)
 	exp.(range(log(a),log(b), length=n))
@@ -98,6 +116,7 @@ function logspace(::Type{Int}, a, b, n)
 	round.(Int, logspace(a,b,n))
 end
 
+#=
 function errors(es::Vector{Experiment})
 	n = length(es)# - 1
 	ee = es[end]
@@ -113,11 +132,14 @@ function errors(es::Vector{Experiment})
 	return errs
 end
 
-function error(ref::Experiment, trial::Experiment)
+
+
+@memoize PermaDict("cache/err_") function error(ref::Experiment, trial::Experiment)
 	e1, e2 = ref, trial
-	p = stationary(e1) * length(e1.picks)
+	p = stationary(e1)
 	Sqra.sp_mse(e1.committor, e2.committor, e1.sb, e2.sb, p)
 end
+=#
 
 
 ### Voronoi picking
@@ -164,8 +186,10 @@ function committor(Q, cl; maxiter=1000)
 		Pl[i,i] == 0 && (Pl[i,i] = 1)
 	end
 
-	IterativeSolvers.gmres!(c, A, b; maxiter=maxiter, Pl=Pl)
-	# TODO: report nonconvergence
+	_, hist = IterativeSolvers.gmres!(c, A, b; maxiter=maxiter, Pl=Pl, log=true)
+	if !hist.isconverged
+		@warn "Committor computation did not converge"
+	end
 
 	res = sqrt(sum(abs2, (Pl^-1)*(A*c - b)))
 	println("Committor residual mean: ", res)
@@ -188,6 +212,13 @@ function committor_system(Q, classes)
                 b[i] = 0
             end
         end
+
+		# in the case of Inf outbound rates, ignore this state
+		#= alternative to fixinf
+		if QQ[i,i] == -Inf
+			zerocol!(QQ, i)
+		end
+		=#
     end
 	QQ = sparse(QQ')
 	#c = QQ \ b

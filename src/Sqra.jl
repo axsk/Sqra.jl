@@ -21,18 +21,27 @@ using Memoize
 #include("molly.jl")
 #include("neurcomm.jl")
 
-include("eulermaruyama.jl")
 include("permadict.jl")
 
+# simulation
+include("eulermaruyama.jl")
 
-
+# voronoi
 include("picking.jl")
-include("sparseboxes.jl")
-include("spdistances.jl")
-include("sqra_core.jl")
 include("voronoi_lp.jl")
-include("lennardjones.jl")
+
+# sparse boxes
+#include("sparseboxes.jl")
+include("sbdict.jl")
+include("spdistances.jl")
+
+# sqra
+include("sqra_core.jl")
+
+# models and experiments
+#include("lennardjones.jl")
+include("models.jl")
 include("experiment.jl")
-include("batch.jl")
+#include("batch.jl")
 
 end

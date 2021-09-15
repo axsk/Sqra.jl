@@ -1,28 +1,30 @@
 using ProgressMeter
 using ForwardDiff, DiffResults
 
-function eulermarujamatrajectories(x0::Matrix, potential::Function, sigma::Real, dt::Real, steps::Integer; branches::Integer=1, maxdelta=Inf, progressbar=true)
-    dim, samples = size(x0)
-    xts = similar(x0, dim, steps+1, branches, samples)
-    p = Progress(samples*branches*steps; dt=1, desc="Euler Maruyama simulation", enabled=progressbar)
-    for s in 1:samples
-        for b in 1:branches
-            x = x0[:, s]
-            xts[:, 1, b, s] = x
-            for t in 2:steps+1
-                g = Zygote.gradient(potential, x)[1]
-                if sum(abs2, g * dt) > maxdelta
-                    x = eulermarujamatrajectories(reshape(x, length(x), 1), potential, sigma, dt/10, 10, maxdelta=maxdelta, progressbar=false)[:, end, 1, 1]
-                else
-                    x .+= -g * dt .+ sigma * randn(dim) * sqrt(dt)
-                end
-                xts[:, t, b, s] = x
-		next!(p)
-            end
-        end
-    end
-    xts
+@with_kw struct EMSimulation
+	dt = 0.1
+	N = 100
+	maxdelta = Inf  # adaptive stepsize control if < Inf
+	seed = 1
+	progressbar = true
 end
+
+@memoize PermaDict("cache/sim_") function run(sim::EMSimulation, model, x0)
+	Random.seed!(sim.seed)
+
+	x, u = eulermaruyama(x0, x->potential(model, x), sigma(model), sim.dt, sim.N,
+		maxdelta = sim.maxdelta,
+		progressbar = sim.progressbar)
+
+end
+
+#=
+function extend(s::Simulation, n)
+	e = Simulation(s, x0 = s.x[:, end], nsteps=n)
+	e = run(e)
+	Simulation(s, x=hcat(s.x, e.x), u = vcat(s.u, e.u), nsteps=s.nsteps+n)
+end
+=#
 
 
 function eulermaruyama(x0::AbstractVector, potential::Function, sigma::Real, dt::Real, steps::Integer; maxdelta=Inf, progressbar=true)

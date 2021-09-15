@@ -16,6 +16,8 @@ function sp_mse(x1, x2, d1, d2, w1=ones(length(x1)), w2=ones(length(x2)))
 		e += (x1[i] - x2[j])^2 * w
 	end
 	#@show sum(V)
+
+	@show ws
 	e / ws
 end
 
