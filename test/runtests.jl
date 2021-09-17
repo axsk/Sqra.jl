@@ -5,9 +5,11 @@ using Sqra
 	@time Experiment(Setup())
 end
 
+#=
 @testset "Sparse Boxes" begin
 	include("sparseboxes.jl")
 end
+=#
 #=
 @testset "SpBoxDiscretisation" begin
 	s = run(Simulation())

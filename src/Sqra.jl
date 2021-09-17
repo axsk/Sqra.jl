@@ -31,8 +31,7 @@ include("picking.jl")
 include("voronoi_lp.jl")
 
 # sparse boxes
-#include("sparseboxes.jl")
-include("sbdict.jl")
+include("sparseboxes.jl")
 include("spdistances.jl")
 
 # sqra
