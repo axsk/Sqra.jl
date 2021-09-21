@@ -1,20 +1,14 @@
 using LinearAlgebra
 using NearestNeighbors
 using BenchmarkTools
+using StaticArrays
+using NearestNeighbors
+using QHull #, CDDLib
 
-function benchmark(n=100, d=6, iter=100, particles=10)
-	x = rand(d, n)
-	@benchmark voronoi($x, $iter, $particles)
-end
-
-function voronoi(x::Matrix, iter=1000, particles=1, tmax=1000, eps=1e-8)
-	P = colrows(x)
-	@time searcher = NNSearch(tmax, eps, KDTree(x))
-	@time s0 = descent(P, P[collect(1:particles)], searcher)
-	@time s1 = walk(s0, iter, P, searcher)
-	@time v = enumeratesig(s1, P)
-	P, v
-end
+const Sigma = AbstractVector{<:Integer}  # Sigma komplex consisting of the ids of the generators
+const Point{T} = AbstractVector{T} where T<:Real
+const Points = AbstractVector{<:Point}
+const Vertices = Dict{<:Sigma, <:Point}
 
 struct NNSearch
 	tmax::Float64
@@ -22,9 +16,15 @@ struct NNSearch
 	tree::KDTree
 end
 
-const Sigma = AbstractVector{<:Integer}  # Sigma komplex consisting of the ids of the generators
-const Point = AbstractVector{<:Real}
-const Points = AbstractVector{<:Point}
+function voronoi(x::Matrix, iter=1000, particles=1, tmax=1000, eps=1e-8)
+	P = vecvec(x)
+	searcher = NNSearch(tmax, eps, KDTree(x))
+	s0 = descent(P, P[collect(1:particles)], searcher)
+	v = walk(s0, iter, P, searcher)
+	return v::Vertices, P
+end
+
+vecvec(x) = map(SVector{size(x,1)}, eachcol(x))
 
 """ generate a random ray orthogonal to the subspace spanned by the given points """
 function randray(x::Points)
@@ -35,15 +35,15 @@ function randray(x::Points)
 	for i in 1:k-1
 		v[i] = x[i] .- x[k]
 		for j in 1:(i-1)
-			v[i] .= v[i] .- dot(v[i], v[j]) .* v[j]
+			v[i] = v[i] .- dot(v[i], v[j]) .* v[j]
 		end
-		normalize!(v[i])
+		v[i] = normalize(v[i])
 	end
 	u = randn(d)
 	for i in 1:k-1
 		u = u - dot(u, v[i]) * v[i]
 	end
-	normalize!(u)
+	u = normalize(u)
 	return u
 end
 
@@ -63,40 +63,34 @@ function raycast_bruteforce(sig::Sigma, r, u, P)
 	# begin # check if new point is equidistant to its generators
 	# 	rr = r + ts*u
 	# 	diffs = [sum(abs2, rr.-s) for s in tau]
+	#   allapprox(x) = all(isapprox(x[1], y) for y in x)
 	# 	!allapprox(diffs) && error()
 	# end
 	return sort(tau), ts
 end
 
-
-
-using NearestNeighbors
 function raycast_intersect(sig::Sigma, r::Point, u::Point, P::Points, searcher::NNSearch)
 	tau, tl, tr = [], 0, searcher.tmax
 	x0 = P[sig[1]]
-	#iter = 0
+	iter = 0
 	while tr-tl > searcher.eps
 		tm = (tl+tr)/2
 		i, _ = nn(searcher.tree, r+tm*u)
-		@show i
-		@show r, tm, u
 		x = P[i]
-		if x in sig
+		if i in sig
 			tl = tm
 		else
 			tr = (sum(abs2, r .- x) - sum(abs2, r .- x0)) / (2 * u' * (x-x0))
 			tau = vcat(sig, [i])
 		end
-		#iter += 1
+		iter += 1
 	end
-	#@show iter
+	@show iter
 	if tau == []
 		tr = Inf
 	end
 	return sort(tau), tr
 end
-
-allapprox(x) = all(isapprox(x[1], y) for y in x)
 
 """ starting at given points, run the ray shooting descent to find vertices """
 function descent(PP, P, searcher)
@@ -136,15 +130,14 @@ function walk(S0, nsteps, PP, searcher)
 		for s in 1:nsteps
 			i = rand(1:length(v))
 			e = v[1:end .!= i]
-			u = randray(e)
-			if (u' * (v[i] - e[1])) > 0
+			u = randray(PP[e])
+			if (u' * (PP[v[i]] - PP[e[1]])) > 0
 				u = -u
 			end
 			vv, t = raygen(e, r, u, PP)
 			if t < Inf
 				v = vv
 				r = r + t*u
-				@show v, r
 				push!(S, (v=>r))
 			end
 		end
@@ -152,16 +145,19 @@ function walk(S0, nsteps, PP, searcher)
 	return S
 end
 
+# end of basic implementation
+# boundary computations
+
 """ given vertices in generator-coordinates,
 collect the verts belonging to generator pairs, i.e. boundary vertices """
-function extractconn(sigs)
-	conns = Dict()
-	for (sig, r) in sigs
+function extractconn(v::Vertices)
+	conns = Dict{Tuple{Int,Int}, Vector{Vector{Int}}}()
+	#conns=Dict()
+	for (sig, r) in v
 		for a in sig
 			for b in sig
-				a == b && continue
-				a < b && continue
-				v = get!(conns, sort([a,b]), [])
+				a <= b && continue
+				v = get!(conns, (a,b), [])
 				push!(v, sig)
 			end
 		end
@@ -170,41 +166,51 @@ function extractconn(sigs)
 end
 
 using Polyhedra
-function boundaries(vertices, conns, P)
-	Ahv = map(collect(conns)) do ((g1,g2), inds)
-		coords = map(i->vertices[i], inds)
-		push!(coords, P[g1])  # append voronoi center for full volume
-		p = polyhedron(vrep(coords))
-		V = volume(p)
-		plot!(p)
 
-		h = norm(P[g1] - P[g2])
-		A = 2 * V / h
-		A, h, V
-	end
-	return Ahv
+function boundary(g1::Int, g2::Int, inds::AbstractVector{<:Sigma}, vertices::Vertices, points)
+#function boundaries(vertices, conns, points)
+	#Ahv = map(collect(conns)) do ((g1,g2), inds)
+	vertex_coords = map(i->vertices[i], inds)
+	push!(vertex_coords, points[g1])  # append one voronoi center for full volume
+	#p =
+	V = try
+			volume(polyhedron(vrep(vertex_coords), QHull.Library()))
+		catch e #::QHull.PyCall.PyError
+			0
+		end
+	#plot!(p)
+
+	h = norm(points[g1] - points[g2])
+	A = 2 * V / h
+	A, h, V
+	#end
+	#return Ahv
 end
 
 using SparseArrays
 
-function connectivity_matrix(vertices, conns, P)
-	Ahv = boundaries(vertices, conns, P)
+function connectivity_matrix(vertices, P)
+	conns = extractconn(vertices)
+	@show length(conns)
+	#Ahv = boundaries(vertices, conns, P)
 	I = Int[]
 	J = Int[]
 	V = Float64[]
 	Vs = zeros(length(P))
-	for ((A, h, v), (g1,g2)) in zip(Ahv, keys(conns))
+	for ((g1,g2), sigs) in conns
+	#for ((A, h, v), (g1,g2)) in zip(Ahv, keys(conns))
 		push!(I, g1)
 		push!(J, g2)
+		A, h, v = boundary(g1, g2, sigs, vertices, P)
 		push!(V, A/h)
 		Vs[g1] += v
 		Vs[g2] += v
 	end
 	A = sparse(I, J, V, length(P), length(P))
 	A = A + A'
-	Vsi = 1 ./ Vs
+	Vsi = 1 ./ Vs # check if we want row or col
 	A = A .* Vsi
-	return A, Ahv, Vs
+	return A, Vs
 end
 
 
@@ -215,20 +221,27 @@ function test(n=5, iter=10000)
 	plot(legend=false);
 	x = hcat(hexgrid(n)...)
 	x .+= randn(2,n*n) .* 0.01
-	P, v  = voronoi(x, iter)
+	v, P  = voronoi(x, iter)
 
 	v = Dict(filter(collect(v)) do (k,v)
 		norm(v) < 10
 		end)
 
-	c = extractconn(v)
-	A, Ahv, Vs = connectivity_matrix(v, c, P)
+	#c = extractconn(v)
+	A, Vs = connectivity_matrix(v, P)
 
 	AA = map(x->x>.0, A)
 	plot_connectivity!(AA .* 2, P)
 	scatter!(eachrow(hcat(values(v)...))...)
 	xlims!(1,6); ylims!(0,5)
 end
+
+
+function benchmark(n=100, d=6, iter=100, particles=10)
+	x = rand(d, n)
+	@benchmark voronoi($x, $iter, $particles)
+end
+
 
 function hexgrid(n)
 	P = []
@@ -243,21 +256,6 @@ function hexgrid(n)
 end
 
 
-
-
-
-
-
-colrows(x) = Vector{Float64}.((collect(eachcol(x))))
-
-function toid(P, x)
-	d = Dict(v=>i for (i,v) in enumerate(P))
-	d[x]
-end
-
-function enumeratesig(sigs, P)
-	Dict(map(x->toid(P,x), k) => v for (k,v) in sigs)
-end
 
 
 ### Plotting
