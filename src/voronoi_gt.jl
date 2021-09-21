@@ -1,5 +1,11 @@
 using LinearAlgebra
 using NearestNeighbors
+using BenchmarkTools
+
+function benchmark(n=100, d=6, iter=100, particles=10)
+	x = rand(d, n)
+	@benchmark voronoi($x, $iter, $particles)
+end
 
 function voronoi(x::Matrix, iter=1000, particles=1, tmax=1000, eps=1e-8)
 	P = colrows(x)
@@ -16,9 +22,12 @@ struct NNSearch
 	tree::KDTree
 end
 
+const Sigma = AbstractVector{<:Integer}  # Sigma komplex consisting of the ids of the generators
+const Point = AbstractVector{<:Real}
+const Points = AbstractVector{<:Point}
 
 """ generate a random ray orthogonal to the subspace spanned by the given points """
-function randray(x)
+function randray(x::Points)
 	k = length(x)
 	d = length(x[1])
 	v = similar(x, k-1)
@@ -39,45 +48,44 @@ function randray(x)
 end
 
 """ shooting a ray in the given direction, find the next connecting point """
-function raycast_bruteforce(sig, r, u, P)
+function raycast_bruteforce(sig::Sigma, r, u, P)
 	(tau, ts) = [], Inf
-	x0 = sig[1]
-	for x in P
-		x in sig && continue
+	x0 = P[sig[1]]
+	for i in 1:length(P)
+		i in sig && continue
+		x = P[i]
 		t = (sum(abs2, r .- x) - sum(abs2, r .- x0)) / (2 * u' * (x-x0))
 		if 0 < t < ts
-			(tau, ts) = vcat(sig, [x]), t
+			(tau, ts) = vcat(sig, [i]), t
 		end
 	end
 
 	# begin # check if new point is equidistant to its generators
 	# 	rr = r + ts*u
 	# 	diffs = [sum(abs2, rr.-s) for s in tau]
-	# 	if !allapprox(diffs)
-	# 		@show diffs
-	# 		@show tau
-	# 		@show ts
-	# 		@show u
-	# 		error()
-	# 	end
+	# 	!allapprox(diffs) && error()
 	# end
 	return sort(tau), ts
 end
 
+
+
 using NearestNeighbors
-function raycast_intersect(sig, r, u, P, searcher::NNSearch)
+function raycast_intersect(sig::Sigma, r::Point, u::Point, P::Points, searcher::NNSearch)
 	tau, tl, tr = [], 0, searcher.tmax
-	x0 = sig[1]
+	x0 = P[sig[1]]
 	#iter = 0
 	while tr-tl > searcher.eps
 		tm = (tl+tr)/2
-		idxs, dists = knn(searcher.tree, r+tm*u, 1, false)
-		x = P[idxs[1]]
+		i, _ = nn(searcher.tree, r+tm*u)
+		@show i
+		@show r, tm, u
+		x = P[i]
 		if x in sig
 			tl = tm
 		else
 			tr = (sum(abs2, r .- x) - sum(abs2, r .- x0)) / (2 * u' * (x-x0))
-			tau = vcat(sig, [x])
+			tau = vcat(sig, [i])
 		end
 		#iter += 1
 	end
@@ -94,13 +102,13 @@ allapprox(x) = all(isapprox(x[1], y) for y in x)
 function descent(PP, P, searcher)
 	raygen(sig, r, u, P) = raycast_intersect(sig, r, u, P, searcher)
 	d = length(P[1])
-	Sd1 = [[xi] for xi in P]
+	Sd1 = [[i] for i in 1:length(P)]
 	Sd2 = [xi for xi in P]
 	for k in d:-1:1
 		Sdm1 = []
 		Sdm2 = []
 		for (sig, r) in zip(Sd1, Sd2)
-			u = randray(sig)
+			u = randray(PP[sig])
 			(tau, t) = raygen(sig, r, u, PP)
 			if t == Inf
 				#println("invert direction")
@@ -136,6 +144,7 @@ function walk(S0, nsteps, PP, searcher)
 			if t < Inf
 				v = vv
 				r = r + t*u
+				@show v, r
 				push!(S, (v=>r))
 			end
 		end
