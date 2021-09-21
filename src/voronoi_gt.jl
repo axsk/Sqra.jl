@@ -1,5 +1,23 @@
 using LinearAlgebra
+using NearestNeighbors
 
+function voronoi(x::Matrix, iter=1000, particles=1, tmax=1000, eps=1e-8)
+	P = colrows(x)
+	@time searcher = NNSearch(tmax, eps, KDTree(x))
+	@time s0 = descent(P, P[collect(1:particles)], searcher)
+	@time s1 = walk(s0, iter, P, searcher)
+	@time v = enumeratesig(s1, P)
+	P, v
+end
+
+struct NNSearch
+	tmax::Float64
+	eps::Float64
+	tree::KDTree
+end
+
+
+""" generate a random ray orthogonal to the subspace spanned by the given points """
 function randray(x)
 	k = length(x)
 	d = length(x[1])
@@ -20,7 +38,8 @@ function randray(x)
 	return u
 end
 
-function raygen(sig, r, u, P)
+""" shooting a ray in the given direction, find the next connecting point """
+function raycast_bruteforce(sig, r, u, P)
 	(tau, ts) = [], Inf
 	x0 = sig[1]
 	for x in P
@@ -31,23 +50,49 @@ function raygen(sig, r, u, P)
 		end
 	end
 
-	begin # check if new point is equidistant to its generators
-		rr = r + ts*u
-		diffs = [sum(abs2, rr.-s) for s in tau]
-		if !allapprox(diffs)
-			@show diffs
-			@show tau
-			@show ts
-			@show u
-			error()
-		end
-	end
+	# begin # check if new point is equidistant to its generators
+	# 	rr = r + ts*u
+	# 	diffs = [sum(abs2, rr.-s) for s in tau]
+	# 	if !allapprox(diffs)
+	# 		@show diffs
+	# 		@show tau
+	# 		@show ts
+	# 		@show u
+	# 		error()
+	# 	end
+	# end
 	return sort(tau), ts
+end
+
+using NearestNeighbors
+function raycast_intersect(sig, r, u, P, searcher::NNSearch)
+	tau, tl, tr = [], 0, searcher.tmax
+	x0 = sig[1]
+	#iter = 0
+	while tr-tl > searcher.eps
+		tm = (tl+tr)/2
+		idxs, dists = knn(searcher.tree, r+tm*u, 1, false)
+		x = P[idxs[1]]
+		if x in sig
+			tl = tm
+		else
+			tr = (sum(abs2, r .- x) - sum(abs2, r .- x0)) / (2 * u' * (x-x0))
+			tau = vcat(sig, [x])
+		end
+		#iter += 1
+	end
+	#@show iter
+	if tau == []
+		tr = Inf
+	end
+	return sort(tau), tr
 end
 
 allapprox(x) = all(isapprox(x[1], y) for y in x)
 
-function descent(PP, P = PP[[1]])
+""" starting at given points, run the ray shooting descent to find vertices """
+function descent(PP, P, searcher)
+	raygen(sig, r, u, P) = raycast_intersect(sig, r, u, P, searcher)
 	d = length(P[1])
 	Sd1 = [[xi] for xi in P]
 	Sd2 = [xi for xi in P]
@@ -58,7 +103,7 @@ function descent(PP, P = PP[[1]])
 			u = randray(sig)
 			(tau, t) = raygen(sig, r, u, PP)
 			if t == Inf
-				println("invert direction")
+				#println("invert direction")
 				u = -u
 				(tau, t) = raygen(sig, r, u, PP)
 			end
@@ -70,17 +115,18 @@ function descent(PP, P = PP[[1]])
 		end
 		Sd1, Sd2 = Sdm1, Sdm2
 	end
-	mscat(Sd2[1])
-	return [(a,b) for (a,b) in zip(Sd1, Sd2)]  # transform to array of tuples
+	#mscat(Sd2[1])
+	return Dict((a,b) for (a,b) in zip(Sd1, Sd2))  # transform to array of tuples
 end
 
-mscat(x) = scatter!(eachrow(x)...)
-
-function walk(S0, nsteps, PP)
-	S = Set(S0)
+""" starting at vertices, walk nsteps along the voronoi graph to find new vertices """
+function walk(S0, nsteps, PP, searcher)
+	# raygen = raycast_bruteforce
+ 	raygen(sig, r, u, P) = raycast_intersect(sig, r, u, P, searcher)
+	S = empty(S0)
 	for (v, r) in S0
 		for s in 1:nsteps
-			@show i = rand(1:length(v))
+			i = rand(1:length(v))
 			e = v[1:end .!= i]
 			u = randray(e)
 			if (u' * (v[i] - e[1])) > 0
@@ -90,24 +136,133 @@ function walk(S0, nsteps, PP)
 			if t < Inf
 				v = vv
 				r = r + t*u
-				push!(S, (v,r))
+				push!(S, (v=>r))
 			end
 		end
 	end
 	return S
 end
 
-function uniquefaces(s)
-	sigs = []
-	rs = []
-	for x in s
-		sig, r = x
-		if !(sig in sigs)
-			push!(sigs, sig)
-			push!(rs, r)
+""" given vertices in generator-coordinates,
+collect the verts belonging to generator pairs, i.e. boundary vertices """
+function extractconn(sigs)
+	conns = Dict()
+	for (sig, r) in sigs
+		for a in sig
+			for b in sig
+				a == b && continue
+				a < b && continue
+				v = get!(conns, sort([a,b]), [])
+				push!(v, sig)
+			end
 		end
 	end
-	return sigs, rs
+	conns
+end
+
+using Polyhedra
+function boundaries(vertices, conns, P)
+	Ahv = map(collect(conns)) do ((g1,g2), inds)
+		coords = map(i->vertices[i], inds)
+		push!(coords, P[g1])  # append voronoi center for full volume
+		p = polyhedron(vrep(coords))
+		V = volume(p)
+		plot!(p)
+
+		h = norm(P[g1] - P[g2])
+		A = 2 * V / h
+		A, h, V
+	end
+	return Ahv
+end
+
+using SparseArrays
+
+function connectivity_matrix(vertices, conns, P)
+	Ahv = boundaries(vertices, conns, P)
+	I = Int[]
+	J = Int[]
+	V = Float64[]
+	Vs = zeros(length(P))
+	for ((A, h, v), (g1,g2)) in zip(Ahv, keys(conns))
+		push!(I, g1)
+		push!(J, g2)
+		push!(V, A/h)
+		Vs[g1] += v
+		Vs[g2] += v
+	end
+	A = sparse(I, J, V, length(P), length(P))
+	A = A + A'
+	Vsi = 1 ./ Vs
+	A = A .* Vsi
+	return A, Ahv, Vs
+end
+
+
+
+using Plots
+# this works after filtering out the boundary-outbound vertices
+function test(n=5, iter=10000)
+	plot(legend=false);
+	x = hcat(hexgrid(n)...)
+	x .+= randn(2,n*n) .* 0.01
+	P, v  = voronoi(x, iter)
+
+	v = Dict(filter(collect(v)) do (k,v)
+		norm(v) < 10
+		end)
+
+	c = extractconn(v)
+	A, Ahv, Vs = connectivity_matrix(v, c, P)
+
+	AA = map(x->x>.0, A)
+	plot_connectivity!(AA .* 2, P)
+	scatter!(eachrow(hcat(values(v)...))...)
+	xlims!(1,6); ylims!(0,5)
+end
+
+function hexgrid(n)
+	P = []
+	for i in 1:n
+		for j in 1:n
+			x = i + j/2
+			y = j * sqrt(3) / 2
+			push!(P, [x,y])
+		end
+	end
+	P
+end
+
+
+
+
+
+
+
+colrows(x) = Vector{Float64}.((collect(eachcol(x))))
+
+function toid(P, x)
+	d = Dict(v=>i for (i,v) in enumerate(P))
+	d[x]
+end
+
+function enumeratesig(sigs, P)
+	Dict(map(x->toid(P,x), k) => v for (k,v) in sigs)
+end
+
+
+### Plotting
+
+mscat(x) = scatter!(eachrow(x)...)
+
+function plot_connectivity!(A, P)
+	for (i,j,v) in zip(findnz(A)...)
+		x1, y1 = P[i]
+		x2, y2 = P[j]
+		plot!([x1, x2], [y1, y2], linewidth=log.(v), color=:black)
+
+	end
+	plot!()
 end
 
 function plotface!(sig, r)
@@ -115,19 +270,6 @@ function plotface!(sig, r)
 		plot!([s[1], r[1]], [s[2], r[2]], linestyle=:dash)
 	end
 	plot!()
-end
-
-function extractconn(sigs)
-	conns = Set()
-	for s in sigs
-		for a in s
-			for b in s
-				a == b && continue
-				push!(conns, (a,b))
-			end
-		end
-	end
-	conns
 end
 
 function plotconns!(conns)
@@ -138,18 +280,6 @@ function plotconns!(conns)
 		plot!([x1, x2], [y1, y2])
 	end
 end
-
-function delmap(sigs)
-	d = Dict()
-	for (i, s) in enumerate(sigs)
-		for x in s
-			v = get!(d, x, [])
-			push!(v, i)
-		end
-	end
-	d
-end
-
 
 function plotcenters!(P)
 	scatter!(collect(eachrow(reduce(hcat, P)))...)
@@ -167,16 +297,15 @@ function plotwalk!(P, s0 = descent(P))
 	return s0
 end
 
-
-function voronoi(x::Matrix)
-	P = map(collect, sort(collect(eachcol(x))))
-	descent(P, P)
-end
-
-
-
-function test()
-	x=[0 1 0.
-          0 0 1]
-	voronoi(x)
+function uniquefaces(s)
+	sigs = []
+	rs = []
+	for x in s
+		sig, r = x
+		if !(sig in sigs)
+			push!(sigs, sig)
+			push!(rs, r)
+		end
+	end
+	return sigs, rs
 end
