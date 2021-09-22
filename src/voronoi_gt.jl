@@ -1,5 +1,4 @@
 using LinearAlgebra
-using NearestNeighbors
 using BenchmarkTools
 using StaticArrays
 using NearestNeighbors
@@ -73,7 +72,13 @@ function raycast_intersect(sig::Sigma, r::Point, u::Point, P::Points, searcher::
 	tau, tl, tr = [], 0, searcher.tmax
 	x0 = P[sig[1]]
 	iter = 0
+	#@show norm(x0-r)
+	#@show idxs, dists = knn(searcher.tree, r, length(sig)+5, true, i->(dot(P[i]-r, u) <= 0))
+
+	#try @show [(sum(abs2, r .- x) - sum(abs2, r .- x0)) / (2 * u' * (x-x0)) for x in P[idxs]] catch; end
+
 	while tr-tl > searcher.eps
+		#@show iter += 1
 		tm = (tl+tr)/2
 		i, _ = nn(searcher.tree, r+tm*u)
 		x = P[i]
@@ -82,15 +87,62 @@ function raycast_intersect(sig::Sigma, r::Point, u::Point, P::Points, searcher::
 		else
 			tr = (sum(abs2, r .- x) - sum(abs2, r .- x0)) / (2 * u' * (x-x0))
 			tau = vcat(sig, [i])
+
+			# early stopping
+			idxs, dists = knn(searcher.tree, r+tr*u, length(sig)+1, true)
+			#@show idxs, i, sig, dists
+			length(intersect(idxs, [sig; i])) == length(sig)+1 && break
+
+			#if length(intersect()
 		end
-		iter += 1
+
 	end
-	@show iter
+	
 	if tau == []
 		tr = Inf
 	end
+	#@show iter, tr, sort(tau)
 	return sort(tau), tr
 end
+
+
+function raycast_incircle(sig::Sigma, r::Point, u::Point, P::Points, searcher::NNSearch)
+	i = 0
+	t = 1
+	x0 = P[sig[1]]
+
+	# find a t large enough to include a non-boundary (sig) point
+	while t < searcher.tmax
+		i, _ = nn(searcher.tree, r+t*u)
+		if i in sig
+			t = t * 2
+		else
+			break
+		end
+	end
+
+	if i == 0
+		tau = sort([sig, 0])
+		return tau, Inf
+	end
+
+	# sucessively reduce incircles unless nothing new is found
+	while true
+		x = P[i]
+		t = (sum(abs2, r .- x) - sum(abs2, r .- x0)) / (2 * u' * (x-x0))
+		j, _ = nn(searcher.tree, r+t*u)
+		if j in [sig; i]
+			break
+		else
+			i = j
+		end
+	end
+
+	tau = sort([sig; i])
+
+	return tau, t
+end
+
 
 """ starting at given points, run the ray shooting descent to find vertices """
 function descent(PP, P, searcher)
@@ -150,7 +202,7 @@ end
 
 """ given vertices in generator-coordinates,
 collect the verts belonging to generator pairs, i.e. boundary vertices """
-function extractconn(v::Vertices)
+function adjacency(v::Vertices)
 	conns = Dict{Tuple{Int,Int}, Vector{Vector{Int}}}()
 	#conns=Dict()
 	for (sig, r) in v
@@ -190,7 +242,7 @@ end
 using SparseArrays
 
 function connectivity_matrix(vertices, P)
-	conns = extractconn(vertices)
+	conns = adjacency(vertices)
 	@show length(conns)
 	#Ahv = boundaries(vertices, conns, P)
 	I = Int[]
@@ -221,14 +273,14 @@ function test(n=5, iter=10000)
 	plot(legend=false);
 	x = hcat(hexgrid(n)...)
 	x .+= randn(2,n*n) .* 0.01
-	v, P  = voronoi(x, iter)
+	@time v, P  = voronoi(x, iter)
 
 	v = Dict(filter(collect(v)) do (k,v)
 		norm(v) < 10
 		end)
 
 	#c = extractconn(v)
-	A, Vs = connectivity_matrix(v, P)
+	@time A, Vs = connectivity_matrix(v, P)
 
 	AA = map(x->x>.0, A)
 	plot_connectivity!(AA .* 2, P)
