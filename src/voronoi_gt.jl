@@ -23,7 +23,8 @@ function voronoi(x::Matrix, iter=1000, particles=1, tmax=1000, eps=1e-8)
 	return v::Vertices, P
 end
 
-vecvec(x) = map(SVector{size(x,1)}, eachcol(x))
+vecvec(x::Matrix) = map(SVector{size(x,1)}, eachcol(x))
+vecvec(x::Vector{<:SVector}) = x
 
 """ generate a random ray orthogonal to the subspace spanned by the given points """
 function randray(x::Points)
@@ -48,13 +49,14 @@ end
 
 """ shooting a ray in the given direction, find the next connecting point """
 function raycast_bruteforce(sig::Sigma, r, u, P)
-	(tau, ts) = [], Inf
+	eps = 1e-10
+	(tau, ts) = [0; sig], Inf
 	x0 = P[sig[1]]
 	for i in 1:length(P)
 		i in sig && continue
 		x = P[i]
 		t = (sum(abs2, r .- x) - sum(abs2, r .- x0)) / (2 * u' * (x-x0))
-		if 0 < t < ts
+		if eps < t < ts
 			(tau, ts) = vcat(sig, [i]), t
 		end
 	end
@@ -97,8 +99,9 @@ function raycast_intersect(sig::Sigma, r::Point, u::Point, P::Points, searcher::
 		end
 
 	end
-	
+
 	if tau == []
+		tau = [0; sig]
 		tr = Inf
 	end
 	#@show iter, tr, sort(tau)
@@ -110,19 +113,24 @@ function raycast_incircle(sig::Sigma, r::Point, u::Point, P::Points, searcher::N
 	i = 0
 	t = 1
 	x0 = P[sig[1]]
-
+	local d, n
 	# find a t large enough to include a non-boundary (sig) point
 	while t < searcher.tmax
-		i, _ = nn(searcher.tree, r+t*u)
-		if i in sig
+		n, d = nn(searcher.tree, r+t*u)
+		d==Inf && warn("d==Inf in raycast expansion, this should never happen")
+
+		if n in sig
 			t = t * 2
 		else
+			i = n
 			break
 		end
 	end
 
-	if i == 0
-		tau = sort([sig, 0])
+	if i == 0 || d == Inf
+		#@show "inv"
+		#@show sig, i, t, d,n
+		tau = sort([0; sig])
 		return tau, Inf
 	end
 
@@ -130,6 +138,7 @@ function raycast_incircle(sig::Sigma, r::Point, u::Point, P::Points, searcher::N
 	while true
 		x = P[i]
 		t = (sum(abs2, r .- x) - sum(abs2, r .- x0)) / (2 * u' * (x-x0))
+		#@show t, u
 		j, _ = nn(searcher.tree, r+t*u)
 		if j in [sig; i]
 			break
@@ -138,15 +147,27 @@ function raycast_incircle(sig::Sigma, r::Point, u::Point, P::Points, searcher::N
 		end
 	end
 
-	tau = sort([sig; i])
+	tau = sort([i; sig])
 
 	return tau, t
 end
 
+#raygen(sig, r, u, P, searcher::NNSearch) = raycast_intersect(sig, r, u, P, searcher)
+#raygen(sig, r, u, P, searcher) = raycast_bruteforce(sig, r, u, P)
+
+function raygen_compare(sig, r, u, P, searcher)
+	r1  = raycast_incircle(sig,r,u,P,searcher)
+	r2  = raycast_intersect(sig,r,u,P,searcher)
+	r3  = raycast_bruteforce(sig,r,u,P)
+	@assert r1[1] == r2[1]
+	@assert r2[1] == r3[1]
+	return r1
+end
+
+raygen(x...) = raycast_incircle(x...)
 
 """ starting at given points, run the ray shooting descent to find vertices """
 function descent(PP, P, searcher)
-	raygen(sig, r, u, P) = raycast_intersect(sig, r, u, P, searcher)
 	d = length(P[1])
 	Sd1 = [[i] for i in 1:length(P)]
 	Sd2 = [xi for xi in P]
@@ -155,11 +176,11 @@ function descent(PP, P, searcher)
 		Sdm2 = []
 		for (sig, r) in zip(Sd1, Sd2)
 			u = randray(PP[sig])
-			(tau, t) = raygen(sig, r, u, PP)
+			(tau, t) = raygen(sig, r, u, PP, searcher)
 			if t == Inf
 				#println("invert direction")
 				u = -u
-				(tau, t) = raygen(sig, r, u, PP)
+				(tau, t) = raygen(sig, r, u, PP, searcher)
 			end
 			#@show (tau, t)
 			if !(tau in Sdm1)
@@ -173,26 +194,42 @@ function descent(PP, P, searcher)
 	return Dict((a,b) for (a,b) in zip(Sd1, Sd2))  # transform to array of tuples
 end
 
+#=
+function walkray(v, r, xs, searcher)
+	i = rand(1:length(v))
+	e = v[1:end .!= i]
+	u = randray(PP[e])
+	if (u' * (PP[v[i]] - PP[e[1]])) > 0
+		u = -u
+	end
+	vv, t = raygen(e, r, u, PP, searcher)
+=#
+
 """ starting at vertices, walk nsteps along the voronoi graph to find new vertices """
-function walk(S0, nsteps, PP, searcher)
-	# raygen = raycast_bruteforce
- 	raygen(sig, r, u, P) = raycast_intersect(sig, r, u, P, searcher)
+function walk(S0, nsteps, PP, searcher, maxstuck = Inf)
 	S = empty(S0)
+	nonew = 0
 	for (v, r) in S0
 		for s in 1:nsteps
+			nonew += 1
 			i = rand(1:length(v))
 			e = v[1:end .!= i]
 			u = randray(PP[e])
 			if (u' * (PP[v[i]] - PP[e[1]])) > 0
 				u = -u
 			end
-			vv, t = raygen(e, r, u, PP)
+			vv, t = raygen(e, r, u, PP, searcher)
 			if t < Inf
 				v = vv
 				r = r + t*u
-				push!(S, (v=>r))
+				get!(S, vv) do
+					nonew = 0
+					return r
+				end
 			end
+			nonew > maxstuck && break
 		end
+
 	end
 	return S
 end
@@ -240,8 +277,10 @@ function boundary(g1::Int, g2::Int, inds::AbstractVector{<:Sigma}, vertices::Ver
 end
 
 using SparseArrays
+using ProgressMeter
 
-function connectivity_matrix(vertices, P)
+
+function connectivity_matrix(vertices, P::AbstractVector)
 	conns = adjacency(vertices)
 	@show length(conns)
 	#Ahv = boundaries(vertices, conns, P)
@@ -249,7 +288,7 @@ function connectivity_matrix(vertices, P)
 	J = Int[]
 	V = Float64[]
 	Vs = zeros(length(P))
-	for ((g1,g2), sigs) in conns
+	@showprogress for ((g1,g2), sigs) in conns
 	#for ((A, h, v), (g1,g2)) in zip(Ahv, keys(conns))
 		push!(I, g1)
 		push!(J, g2)
