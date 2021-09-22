@@ -2,7 +2,9 @@ using LinearAlgebra
 using BenchmarkTools
 using StaticArrays
 using NearestNeighbors
-using QHull #, CDDLib
+using QHull, CDDLib
+
+
 
 const Sigma = AbstractVector{<:Integer}  # Sigma komplex consisting of the ids of the generators
 const Point{T} = AbstractVector{T} where T<:Real
@@ -15,11 +17,11 @@ struct NNSearch
 	tree::KDTree
 end
 
-function voronoi(x::Matrix, iter=1000, particles=1, tmax=1000, eps=1e-8)
+function voronoi(x::Matrix, iter=1000, particles=1; tmax=1000, eps=1e-8, maxstuck=100)
 	P = vecvec(x)
 	searcher = NNSearch(tmax, eps, KDTree(x))
 	s0 = descent(P, P[collect(1:particles)], searcher)
-	v = walk(s0, iter, P, searcher)
+	v = walk(s0, iter, P, searcher, maxstuck)
 	return v::Vertices, P
 end
 
@@ -194,16 +196,20 @@ function descent(PP, P, searcher)
 	return Dict((a,b) for (a,b) in zip(Sd1, Sd2))  # transform to array of tuples
 end
 
-#=
 function walkray(v, r, xs, searcher)
 	i = rand(1:length(v))
 	e = v[1:end .!= i]
-	u = randray(PP[e])
-	if (u' * (PP[v[i]] - PP[e[1]])) > 0
+	u = randray(xs[e])
+	if (u' * (xs[v[i]] - xs[e[1]])) > 0
 		u = -u
 	end
-	vv, t = raygen(e, r, u, PP, searcher)
-=#
+	vv, t = raygen(e, r, u, xs, searcher)
+	if t < Inf
+		v = vv
+		r = r + t*u
+	end
+	return v, r
+end
 
 """ starting at vertices, walk nsteps along the voronoi graph to find new vertices """
 function walk(S0, nsteps, PP, searcher, maxstuck = Inf)
@@ -212,24 +218,13 @@ function walk(S0, nsteps, PP, searcher, maxstuck = Inf)
 	for (v, r) in S0
 		for s in 1:nsteps
 			nonew += 1
-			i = rand(1:length(v))
-			e = v[1:end .!= i]
-			u = randray(PP[e])
-			if (u' * (PP[v[i]] - PP[e[1]])) > 0
-				u = -u
-			end
-			vv, t = raygen(e, r, u, PP, searcher)
-			if t < Inf
-				v = vv
-				r = r + t*u
-				get!(S, vv) do
-					nonew = 0
-					return r
-				end
+			v, r = walkray(v, r, PP, searcher)
+			get!(S, v) do
+				nonew = 0
+				return r
 			end
 			nonew > maxstuck && break
 		end
-
 	end
 	return S
 end
@@ -406,4 +401,64 @@ function uniquefaces(s)
 		end
 	end
 	return sigs, rs
+end
+
+function testreal(d=6, n=200)
+	x = rand(d, n)
+	@time v,p = voronoi(rand(d,n), 10_000_000; maxstuck=100_000);
+	@show length(v)
+	a = adjacency(v)
+	println("avg. no. of neighbors: ", length(a)/n)
+	println("avg. no. of vertices per face: ", mean(length.(values(a))))
+	@time c = connectivity_matrix(v, p)
+	v,p,c
+end
+
+
+function hrp(v, a=adjacency(v))
+	for ((g1,g2), vs) in a
+		d=Dict()
+		for i in 1:length(vs)
+			for j in 1:length(vs[i])
+				if vs[i][j] in (g1,g2)
+					continue
+				end
+				sig = vs[i][1:end .!= j]
+				x = get!(d, vs[i][j], [])
+				push!(x, i)
+			end
+		end
+		return d, first(values(a))
+	end
+end
+
+## experimental code
+
+function orthonorm(x)
+	v = deepcopy(x)
+	k = length(x)
+	for i in 1:k
+		v[i] = x[i]# .- x[k]
+		for j in 1:(i-1)
+			v[i] = v[i] .- dot(v[i], normalize(v[j])) .* normalize(v[j])# / norm(v[j])^2
+		end
+		#v[i] = normalize(v[i])
+	end
+	v
+end
+
+function t(v)
+	# look in the adjacency list for verts with 3 same gens, these lie on a hyperplane
+	h, vs = hrp(v)
+	vinds = first(values(h))
+	c = map(i->v[i], vs[vinds])
+	cc = c.-[c[1]]
+	cc = Vector.(cc)
+	# probably we want to set cc[5] to the inside generator
+	o = orthonorm([cc[1:5]; [ones(6)]])
+	o = orthonorm(o) # whyever this makes a difference?!
+	u = o[6] |> normalize
+	b = c[1]' * u
+	@show [c'*u for c in c ]
+	u, b
 end
