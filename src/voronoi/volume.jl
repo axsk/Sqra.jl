@@ -1,5 +1,6 @@
 
 using Polyhedra
+using ProgressMeter
 
 
 boundary_area_verts(((g1, g2), inds), v, p) = boundary(g1,g2,inds, v, p)[1]
