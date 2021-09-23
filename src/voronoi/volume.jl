@@ -1,0 +1,115 @@
+
+using Polyhedra
+
+
+boundary_area_verts(((g1, g2), inds), v, p) = boundary(g1,g2,inds, v, p)[1]
+boundary_area_edges(((g1, g2), inds), p) = boundary_area_edges(g1,g2,inds, p)
+
+
+function boundary_area_edges(g1::Int, g2::Int, hypervertices::SVertices, points)
+	A = points[g1]
+	B = points[g2]
+	transform = transformation(A, B)
+	A = transform(A)
+	gen_inds = unique!(sort!(reduce(vcat,hypervertices)))
+
+	halfspaces = []
+	for gen_ind in gen_inds
+		gen_ind in (g1,g2) && continue
+		B = transform(points[gen_ind])
+		u = normalize(B-A)
+		b = dot(u, (A+B)/2)
+		hf = HalfSpace(u[2:end], b)
+		push!(halfspaces, hf)
+	end
+	halfspaces = [h for h in halfspaces]
+
+	poly = polyhedron(hrep(halfspaces))
+	#!hasrays(poly) && plot!(poly)
+	vol = try
+			volume(poly)
+		catch e
+			vol = Inf
+		end
+	vol == -1 && (vol = 0)
+	return vol
+end
+
+function transformation(A, B)
+	R = diagm(ones(length(A)))
+	R[:,1] = B-A
+	R = inv(qr(R).Q)  # shortcut for gram schmidt orthogonalization
+	t = R*(A+B)/2
+	transform(x) = R*x - t
+end
+
+using SparseArrays
+using ProgressMeter
+
+
+function connectivity_matrix(vertices, P::AbstractVector)
+	conns = adjacency(vertices)
+	@show length(conns)
+	#Ahv = boundaries(vertices, conns, P)
+	I = Int[]
+	J = Int[]
+	V = Float64[]
+	Vs = zeros(length(P))
+	@showprogress for ((g1,g2), sigs) in conns
+	#for ((A, h, v), (g1,g2)) in zip(Ahv, keys(conns))
+		push!(I, g1)
+		push!(J, g2)
+		A, h, v = boundary(g1, g2, sigs, vertices, P)
+		push!(V, A/h)
+		Vs[g1] += v
+		Vs[g2] += v
+	end
+	A = sparse(I, J, V, length(P), length(P))
+	A = A + A'
+	Vsi = 1 ./ Vs # check if we want row or col
+	A = A .* Vsi
+	return A, Vs
+end
+
+
+""" given vertices in generator-coordinates,
+collect the verts belonging to generator pairs, i.e. boundary vertices """
+function adjacency(v::Vertices)
+	conns = Dict{Tuple{Int,Int}, Vector{Vector{Int}}}()
+	#conns=Dict()
+	for (sig, r) in v
+		for a in sig
+			for b in sig
+				a <= b && continue
+				v = get!(conns, (a,b), [])
+				push!(v, sig)
+			end
+		end
+	end
+	conns
+end
+
+using Polyhedra
+
+function boundary(g1::Int, g2::Int, inds::AbstractVector{<:SVertex}, vertices::Vertices, points)
+	A = points[g1]
+	B = points[g2]
+	dim = length(A)
+#function boundaries(vertices, conns, points)
+	#Ahv = map(collect(conns)) do ((g1,g2), inds)
+	vertex_coords = map(i->vertices[i], inds)
+	push!(vertex_coords, A)  # append one voronoi center for full volume
+	#p =
+	V = try
+			volume(polyhedron(vrep(vertex_coords), QHull.Library()))
+		catch e #::QHull.PyCall.PyError
+			0
+		end
+	#plot!(p)
+
+	h = norm(B - A) / 2
+	A = dim * V / h
+	A, h, V
+	#end
+	#return Ahv
+end

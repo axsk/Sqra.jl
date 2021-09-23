@@ -43,4 +43,8 @@ include("models.jl")
 include("experiment.jl")
 #include("batch.jl")
 
+module Voronoi
+	include("voronoi/Voronoi.jl")
+end
+
 end
