@@ -1,9 +1,9 @@
 function test_volume(npoints = 100, dim = 3)
 	x = rand(dim, npoints)
-	v, p = voronoi(x, 10000)
-	a = adjacency(v)
-	av = [boundary_area_verts(a, v, p) for a in a]
-	ae = [boundary_area_edges(a, p) for a in a]
+	@time v, p = voronoi(x, 10000)
+	@time a = adjacency(v)
+	@time av = [boundary_area_verts(a, v, p) for a in a]
+	@time ae = [boundary_area_edges(a, p) for a in a]
 	delta = filter(isfinite, ae - av)
 	quota = sum(delta .< 1e-6) / length(delta)
 	@assert quota > 2/3

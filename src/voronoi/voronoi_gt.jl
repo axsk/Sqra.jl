@@ -1,10 +1,3 @@
-using LinearAlgebra
-using BenchmarkTools
-using StaticArrays
-using NearestNeighbors
-using QHull, CDDLib
-
-
 const SVertex = AbstractVector{<:Integer}  # SVertex komplex consisting of the ids of the generators
 const SVertices = AbstractVector{<:SVertex}
 const Point{T} = AbstractVector{T} where T<:Real
@@ -28,6 +21,78 @@ end
 vecvec(x::Matrix) = map(SVector{size(x,1)}, eachcol(x))
 vecvec(x::Vector{<:SVector}) = x
 
+
+""" starting at given points, run the ray shooting descent to find vertices """
+function descent(PP, P, searcher)
+	d = length(P[1])
+	Sd1 = [[i] for i in 1:length(P)]
+	Sd2 = [xi for xi in P]
+	for k in d:-1:1
+		Sdm1 = []
+		Sdm2 = []
+		for (sig, r) in zip(Sd1, Sd2)
+			u = randray(PP[sig])
+			(tau, t) = raygen(sig, r, u, PP, searcher)
+			if t == Inf
+				#println("invert direction")
+				u = -u
+				(tau, t) = raygen(sig, r, u, PP, searcher)
+			end
+			#@show (tau, t)
+			if !(tau in Sdm1)
+				push!(Sdm1, tau)
+				push!(Sdm2, r + t*u)
+			end
+		end
+		Sd1, Sd2 = Sdm1, Sdm2
+	end
+	#mscat(Sd2[1])
+	return Dict((a,b) for (a,b) in zip(Sd1, Sd2))  # transform to array of tuples
+end
+
+
+""" starting at vertices, walk nsteps along the voronoi graph to find new vertices """
+function walk(S0, nsteps, PP, searcher, maxstuck = Inf)
+	S = empty(S0)
+	nonew = 0
+	for (v, r) in S0
+		for s in 1:nsteps
+			nonew += 1
+			v, r = walkray(v, r, PP, searcher)
+			get!(S, v) do
+				nonew = 0
+				return r
+			end
+			nonew > maxstuck && break
+		end
+	end
+	return S
+end
+
+""" starting at vertex (v,r), return a random adjacent vertex """
+function walkray(v, r, xs, searcher)
+	i = rand(1:length(v))
+	e = v[1:end .!= i]
+	u = randray(xs[e])
+	if (u' * (xs[v[i]] - xs[e[1]])) > 0
+		u = -u
+	end
+	vv, t = raygen(e, r, u, xs, searcher)
+	if t < Inf
+		v = vv
+		r = r + t*u
+	end
+	return v, r
+end
+
+
+raygen(x...) = raycast_incircle(x...)
+
+
+
+## lowlevel subroutines
+
+
 """ generate a random ray orthogonal to the subspace spanned by the given points """
 function randray(x::Points)
 	k = length(x)
@@ -49,7 +114,8 @@ function randray(x::Points)
 	return u
 end
 
-""" shooting a ray in the given direction, find the next connecting point """
+""" shooting a ray in the given direction, find the next connecting point.
+This is the bruteforce variant, using a linear search to find the closest point """
 function raycast_bruteforce(sig::SVertex, r, u, P)
 	eps = 1e-10
 	(tau, ts) = [0; sig], Inf
@@ -72,6 +138,8 @@ function raycast_bruteforce(sig::SVertex, r, u, P)
 	return sort(tau), ts
 end
 
+""" shooting a ray in the given direction, find the next connecting point.
+This variant (by Poliaski, Pokorny) uses a binary search """
 function raycast_intersect(sig::SVertex, r::Point, u::Point, P::Points, searcher::NNSearch)
 	tau, tl, tr = [], 0, searcher.tmax
 	x0 = P[sig[1]]
@@ -110,7 +178,8 @@ function raycast_intersect(sig::SVertex, r::Point, u::Point, P::Points, searcher
 	return sort(tau), tr
 end
 
-
+""" Shooting a ray in the given direction, find the next connecting point.
+This variant (by Sikorski) uses an iterative NN search """
 function raycast_incircle(sig::SVertex, r::Point, u::Point, P::Points, searcher::NNSearch)
 	i = 0
 	t = 1
@@ -119,7 +188,10 @@ function raycast_incircle(sig::SVertex, r::Point, u::Point, P::Points, searcher:
 	# find a t large enough to include a non-boundary (sig) point
 	while t < searcher.tmax
 		n, d = nn(searcher.tree, r+t*u)
-		d==Inf && warn("d==Inf in raycast expansion, this should never happen")
+		if d==Inf
+			warn("d==Inf in raycast expansion, this should never happen")
+			return [0; sig], Inf
+		end
 
 		if n in sig
 			t = t * 2
@@ -129,11 +201,8 @@ function raycast_incircle(sig::SVertex, r::Point, u::Point, P::Points, searcher:
 		end
 	end
 
-	if i == 0 || d == Inf
-		#@show "inv"
-		#@show sig, i, t, d,n
-		tau = sort([0; sig])
-		return tau, Inf
+	if i == 0
+		return [0; sig], Inf
 	end
 
 	# sucessively reduce incircles unless nothing new is found
@@ -154,9 +223,6 @@ function raycast_incircle(sig::SVertex, r::Point, u::Point, P::Points, searcher:
 	return tau, t
 end
 
-#raygen(sig, r, u, P, searcher::NNSearch) = raycast_intersect(sig, r, u, P, searcher)
-#raygen(sig, r, u, P, searcher) = raycast_bruteforce(sig, r, u, P)
-
 function raygen_compare(sig, r, u, P, searcher)
 	r1  = raycast_incircle(sig,r,u,P,searcher)
 	r2  = raycast_intersect(sig,r,u,P,searcher)
@@ -164,67 +230,4 @@ function raygen_compare(sig, r, u, P, searcher)
 	@assert r1[1] == r2[1]
 	@assert r2[1] == r3[1]
 	return r1
-end
-
-raygen(x...) = raycast_incircle(x...)
-
-""" starting at given points, run the ray shooting descent to find vertices """
-function descent(PP, P, searcher)
-	d = length(P[1])
-	Sd1 = [[i] for i in 1:length(P)]
-	Sd2 = [xi for xi in P]
-	for k in d:-1:1
-		Sdm1 = []
-		Sdm2 = []
-		for (sig, r) in zip(Sd1, Sd2)
-			u = randray(PP[sig])
-			(tau, t) = raygen(sig, r, u, PP, searcher)
-			if t == Inf
-				#println("invert direction")
-				u = -u
-				(tau, t) = raygen(sig, r, u, PP, searcher)
-			end
-			#@show (tau, t)
-			if !(tau in Sdm1)
-				push!(Sdm1, tau)
-				push!(Sdm2, r + t*u)
-			end
-		end
-		Sd1, Sd2 = Sdm1, Sdm2
-	end
-	#mscat(Sd2[1])
-	return Dict((a,b) for (a,b) in zip(Sd1, Sd2))  # transform to array of tuples
-end
-
-function walkray(v, r, xs, searcher)
-	i = rand(1:length(v))
-	e = v[1:end .!= i]
-	u = randray(xs[e])
-	if (u' * (xs[v[i]] - xs[e[1]])) > 0
-		u = -u
-	end
-	vv, t = raygen(e, r, u, xs, searcher)
-	if t < Inf
-		v = vv
-		r = r + t*u
-	end
-	return v, r
-end
-
-""" starting at vertices, walk nsteps along the voronoi graph to find new vertices """
-function walk(S0, nsteps, PP, searcher, maxstuck = Inf)
-	S = empty(S0)
-	nonew = 0
-	for (v, r) in S0
-		for s in 1:nsteps
-			nonew += 1
-			v, r = walkray(v, r, PP, searcher)
-			get!(S, v) do
-				nonew = 0
-				return r
-			end
-			nonew > maxstuck && break
-		end
-	end
-	return S
 end

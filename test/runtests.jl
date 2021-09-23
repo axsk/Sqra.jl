@@ -5,6 +5,10 @@ using Sqra
 	@time Experiment(Setup())
 end
 
+@testset "Voronoi" begin
+	Sqra.Voronoi.tests()
+end
+
 #=
 @testset "Sparse Boxes" begin
 	include("sparseboxes.jl")
