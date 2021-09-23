@@ -6,10 +6,11 @@ using QHull, CDDLib
 
 
 
-const Sigma = AbstractVector{<:Integer}  # Sigma komplex consisting of the ids of the generators
+const SVertex = AbstractVector{<:Integer}  # SVertex komplex consisting of the ids of the generators
+const SVertices = AbstractVector{<:SVertex}
 const Point{T} = AbstractVector{T} where T<:Real
 const Points = AbstractVector{<:Point}
-const Vertices = Dict{<:Sigma, <:Point}
+const Vertices = Dict{<:SVertex, <:Point}
 
 struct NNSearch
 	tmax::Float64
@@ -50,7 +51,7 @@ function randray(x::Points)
 end
 
 """ shooting a ray in the given direction, find the next connecting point """
-function raycast_bruteforce(sig::Sigma, r, u, P)
+function raycast_bruteforce(sig::SVertex, r, u, P)
 	eps = 1e-10
 	(tau, ts) = [0; sig], Inf
 	x0 = P[sig[1]]
@@ -72,7 +73,7 @@ function raycast_bruteforce(sig::Sigma, r, u, P)
 	return sort(tau), ts
 end
 
-function raycast_intersect(sig::Sigma, r::Point, u::Point, P::Points, searcher::NNSearch)
+function raycast_intersect(sig::SVertex, r::Point, u::Point, P::Points, searcher::NNSearch)
 	tau, tl, tr = [], 0, searcher.tmax
 	x0 = P[sig[1]]
 	iter = 0
@@ -111,7 +112,7 @@ function raycast_intersect(sig::Sigma, r::Point, u::Point, P::Points, searcher::
 end
 
 
-function raycast_incircle(sig::Sigma, r::Point, u::Point, P::Points, searcher::NNSearch)
+function raycast_incircle(sig::SVertex, r::Point, u::Point, P::Points, searcher::NNSearch)
 	i = 0
 	t = 1
 	x0 = P[sig[1]]
@@ -251,11 +252,14 @@ end
 
 using Polyhedra
 
-function boundary(g1::Int, g2::Int, inds::AbstractVector{<:Sigma}, vertices::Vertices, points)
+function boundary(g1::Int, g2::Int, inds::AbstractVector{<:SVertex}, vertices::Vertices, points)
+	A = points[g1]
+	B = points[g2]
+	dim = length(A)
 #function boundaries(vertices, conns, points)
 	#Ahv = map(collect(conns)) do ((g1,g2), inds)
 	vertex_coords = map(i->vertices[i], inds)
-	push!(vertex_coords, points[g1])  # append one voronoi center for full volume
+	push!(vertex_coords, A)  # append one voronoi center for full volume
 	#p =
 	V = try
 			volume(polyhedron(vrep(vertex_coords), QHull.Library()))
@@ -264,8 +268,8 @@ function boundary(g1::Int, g2::Int, inds::AbstractVector{<:Sigma}, vertices::Ver
 		end
 	#plot!(p)
 
-	h = norm(points[g1] - points[g2])
-	A = 2 * V / h
+	h = norm(B - A) / 2
+	A = dim * V / h
 	A, h, V
 	#end
 	#return Ahv
@@ -415,23 +419,6 @@ function testreal(d=6, n=200)
 end
 
 
-function hrp(v, a=adjacency(v))
-	for ((g1,g2), vs) in a
-		d=Dict()
-		for i in 1:length(vs)
-			for j in 1:length(vs[i])
-				if vs[i][j] in (g1,g2)
-					continue
-				end
-				sig = vs[i][1:end .!= j]
-				x = get!(d, vs[i][j], [])
-				push!(x, i)
-			end
-		end
-		return d, first(values(a))
-	end
-end
-
 ## experimental code
 
 function orthonorm(x)
@@ -447,18 +434,92 @@ function orthonorm(x)
 	v
 end
 
-function t(v)
-	# look in the adjacency list for verts with 3 same gens, these lie on a hyperplane
-	h, vs = hrp(v)
-	vinds = first(values(h))
-	c = map(i->v[i], vs[vinds])
-	cc = c.-[c[1]]
-	cc = Vector.(cc)
-	# probably we want to set cc[5] to the inside generator
-	o = orthonorm([cc[1:5]; [ones(6)]])
-	o = orthonorm(o) # whyever this makes a difference?!
-	u = o[6] |> normalize
-	b = c[1]' * u
-	@show [c'*u for c in c ]
-	u, b
+
+function boundary2(g1::Int, g2::Int, inds::SVertices, vertices::Vertices, points)
+	d = Dict{Int, Vector{Vector{Int}}}()
+	dim = length(points[1])
+	for i in inds
+		for j in i
+			j==g1 || j==g2 && continue
+			v = get!(d, j, [])
+			if length(v) < dim-1
+				push!(v, i)
+			end
+		end
+	end
+	hs = []
+	for (g3, inds) in d
+		xs = [vertices[i] for i in inds]
+		rel = [xs[i] - xs[end] for i in 1:dim-2]
+		basis = orthonorm([rel; [points[g1]-xs[end], points[g3] - xs[end]]])
+		w = normalize(basis[end])
+		b = w' * xs[1]
+		push!(hs,HalfSpace(w,b))
+	end
+
+	w = normalize(points[g2]-points[g1])
+	b = w' * points[g1]
+	push!(hs,HalfSpace(w,b))
+	pol = polyhedron(hrep([hs...]))
+	return volume(pol)
+end
+
+
+
+
+function boundary2(a, v, p)
+	(g1,g2), inds = first(a)
+	boundary2(g1,g2,inds,v,p)
+end
+
+generator_inds(hypervertices::SVertices) = unique!(sort!(reduce(vcat,hypervertices)))
+
+function testvolume(npoints = 10, dim = 2)
+	x = rand(dim, npoints)
+	v, p = voronoi(x)
+	a = adjacency(v)
+	[boundary_area_verts(a, v, p) for a in a]
+end
+
+using Polyhedra
+
+
+boundary_area_verts(((g1, g2), inds), v, p) = boundary(g1,g2,inds, v, p)[1]
+boundary_area_edges(((g1, g2), inds), v, p) = boundary_area_edges(g1,g2,inds, p)
+
+
+function boundary_area_edges(g1::Int, g2::Int, hypervertices::SVertices, points)
+	A = points[g1]
+	B = points[g2]
+	transform = transformation(A, B)
+	A = transform(A)
+
+	halfspaces = []
+	for gen_ind in generator_inds(hypervertices)
+		gen_ind in (g1,g2) && continue
+		B = transform(points[gen_ind])
+		u = normalize(B-A)
+		b = dot(u, (A+B)/2)
+		hf = HalfSpace(u[2:end], b)
+		push!(halfspaces, hf)
+	end
+	halfspaces = [h for h in halfspaces]
+
+	poly = polyhedron(hrep(halfspaces))
+	#!hasrays(poly) && plot!(poly)
+	vol = try
+			volume(poly)
+		catch e
+			vol = Inf
+		end
+	vol == -1 && (vol = 0)
+	return vol
+end
+
+function transformation(A, B)
+	R = diagm(ones(length(A)))
+	R[:,1] = B-A
+	R = inv(qr(R).Q)  # shortcut for gram schmidt orthogonalization
+	t = R*(A+B)/2
+	transform(x) = R*x - t
 end
