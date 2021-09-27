@@ -1,6 +1,7 @@
 using Distances
 
 function picking(X, n)
+	@assert size(X, 2) >= n
 	d = zeros(size(X, 2), n)
 
 	qs = [1]

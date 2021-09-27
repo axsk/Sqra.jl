@@ -1,7 +1,7 @@
 
 using Polyhedra
 using ProgressMeter
-
+using SparseArrays
 
 boundary_area_verts(((g1, g2), inds), v, p) = boundary(g1,g2,inds, v, p)[1]
 boundary_area_edges(((g1, g2), inds), p) = boundary_area_edges(g1,g2,inds, p)
@@ -34,9 +34,9 @@ function boundary_area_edges(g1::Int, g2::Int, vertices::SVertices, generators)
 	vol = try
 			volume(poly)
 		catch e
-			vol = Inf
+			vol = Inf  # TODO: check if Inf, 0 and -1 are handled correctly here
 		end
-	vol == -1 && (vol = 0)
+	vol == -1 && (ol = 0)
 	return vol
 end
 
@@ -73,6 +73,7 @@ function connectivity_matrix(vertices, P::AbstractVector)
 	end
 	A = sparse(I, J, V, length(P), length(P))
 	A = A + A'
+	Vs = replace(Vs, 0 => Inf)  # if we have 0 volume, we have no rates
 	Vsi = 1 ./ Vs # check if we want row or col
 	A = A .* Vsi
 	return A, Vs

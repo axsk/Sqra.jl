@@ -8,7 +8,7 @@ export Setup, Experiment
 	dt = 0.1
 	N = 100
 	maxdelta = Inf  # adaptive stepsize control if < Inf
-	seed = 1
+	seed = 1  # currently not used anywhere
 	progressbar = true
 	level = 6
 	solveriter = 1000
@@ -27,6 +27,26 @@ function Experiment(setup::Setup)
 	d = @locals
 	(; d...)
 end
+
+function VExperiment(setup::Setup, npick=100, iterv=10000)
+	@unpack_Setup setup
+
+	x, u = eulermaruyama(x0, potential(model), sigma(model), dt, N,
+						 maxdelta = maxdelta, progressbar = progressbar)
+	x, idxs, _ = picking(x, npick)
+	v, P = Voronoi.voronoi(x, iterv)
+	A, Vs = Voronoi.connectivity_matrix(v, P)
+	idxs2 = findall(isfinite, vec(sum(A, dims=2)))
+	Q = sqra(u[idxs], A, beta(model))
+	classes = classify(model, x)
+	cmt = committor(Q, classes, maxiter = solveriter)
+
+	d = @locals
+	(; d...)
+end
+
+
+
 
 
 LJSetup = Setup(model=LJCluster(), dt=0.001, N=1_000_000, maxdelta=0.1)

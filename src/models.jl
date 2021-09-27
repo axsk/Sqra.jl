@@ -27,8 +27,8 @@ boundingbox(m::TripleWell) = m.box
 
 
 function classify(m::TripleWell, x::Matrix)
-	A = sum(abs2, x .- [ 1., 0], dims=1) .< 0.1
-	B = sum(abs2, x .- [-1., 0], dims=1) .< 0.1
+	A = sum(abs2, x .- [ 1., 0], dims=1) .< 0.25
+	B = sum(abs2, x .- [-1., 0], dims=1) .< 0.25
 	vec(A - B)
 end
 

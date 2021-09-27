@@ -179,7 +179,7 @@ function raycast_intersect(sig::SVertex, r::Point, u::Point, P::Points, searcher
 end
 
 """ Shooting a ray in the given direction, find the next connecting point.
-This variant (by Sikorski) uses an iterative NN search """
+This variant uses an iterative NN search """
 function raycast_incircle(sig::SVertex, r::Point, u::Point, P::Points, searcher::NNSearch)
 	i = 0
 	t = 1
@@ -209,7 +209,6 @@ function raycast_incircle(sig::SVertex, r::Point, u::Point, P::Points, searcher:
 	while true
 		x = P[i]
 		t = (sum(abs2, r .- x) - sum(abs2, r .- x0)) / (2 * u' * (x-x0))
-		#@show t, u
 		j, _ = nn(searcher.tree, r+t*u)
 		if j in [sig; i]
 			break
