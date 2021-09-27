@@ -42,6 +42,7 @@ include("sqra_core.jl")
 include("models.jl")
 include("experiment.jl")
 #include("batch.jl")
+include("errors.jl")
 
 module Voronoi
 	include("voronoi/Voronoi.jl")

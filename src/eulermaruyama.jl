@@ -29,7 +29,7 @@ end
 
 function eulermaruyama(x0::AbstractVector, potential::Function, sigma::Real, dt::Real, steps::Integer; maxdelta=Inf, progressbar=true)
     dim = length(x0)
-    p = Progress(steps; dt=1, desc="Euler Maruyama simulation", enabled=progressbar)
+    p = Progress(steps; dt=1, desc="EM Sampling ", enabled=progressbar)
 
     grad = DiffResults.GradientResult(x0)
     cfg = ForwardDiff.GradientConfig(potential, x0)

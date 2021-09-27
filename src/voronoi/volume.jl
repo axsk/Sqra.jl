@@ -54,13 +54,13 @@ end
 function connectivity_matrix(vertices, P::AbstractVector)
 	dim = length(P[1])
 	conns = adjacency(vertices)
-	@show length(conns)
+	#@show length(conns)
 	#Ahv = boundaries(vertices, conns, P)
 	I = Int[]
 	J = Int[]
 	V = Float64[]
 	Vs = zeros(length(P))
-	@showprogress for ((g1,g2), sigs) in conns
+	@showprogress 1 "Voronoi adjacency " for ((g1,g2), sigs) in conns
 	#for ((A, h, v), (g1,g2)) in zip(Ahv, keys(conns))
 		push!(I, g1)
 		push!(J, g2)

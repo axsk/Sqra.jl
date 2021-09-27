@@ -55,9 +55,13 @@ end
 function walk(S0, nsteps, PP, searcher, maxstuck = Inf)
 	S = empty(S0)
 	nonew = 0
+	prog = Progress(maxstuck, 1, "Voronoi walk")
+	progmax = 0
 	for (v, r) in S0
 		for s in 1:nsteps
 			nonew += 1
+			progmax = max(progmax, nonew)
+			ProgressMeter.update!(prog, progmax)
 			v, r = walkray(v, r, PP, searcher)
 			get!(S, v) do
 				nonew = 0

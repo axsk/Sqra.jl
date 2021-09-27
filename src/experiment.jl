@@ -28,13 +28,13 @@ function Experiment(setup::Setup)
 	(; d...)
 end
 
-function VExperiment(setup::Setup, npick=100, iterv=10000)
+function VExperiment(setup::Setup; npick=100, viter=1000 * npick, vstuck=10*npick)
 	@unpack_Setup setup
 
 	x, u = eulermaruyama(x0, potential(model), sigma(model), dt, N,
 						 maxdelta = maxdelta, progressbar = progressbar)
 	x, idxs, _ = picking(x, npick)
-	v, P = Voronoi.voronoi(x, iterv)
+	v, P = Voronoi.voronoi(x, viter; maxstuck = vstuck, tmax=10)
 	A, Vs = Voronoi.connectivity_matrix(v, P)
 	idxs2 = findall(isfinite, vec(sum(A, dims=2)))
 	Q = sqra(u[idxs], A, beta(model))
