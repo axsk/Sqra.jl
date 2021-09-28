@@ -17,8 +17,8 @@ function sp_mse(x1, x2, d1, d2, w1=ones(length(x1)), w2=ones(length(x2)))
 	end
 	#@show sum(V)
 
-	@show ws
-	e / ws
+	#@show ws
+	sqrt(e / ws)
 end
 
 sb_overlap(a, b, k, l) = sbv_linear(a, b, k, l)
