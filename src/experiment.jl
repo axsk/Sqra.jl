@@ -212,7 +212,7 @@ function committor(Q, cl; maxiter=1000)
 	end
 
 	res = sqrt(sum(abs2, (Pl^-1)*(A*c - b)))
-	println("Committor residual mean: ", res)
+	#println("Committor residual mean: ", res)
 
 	return c
 end
