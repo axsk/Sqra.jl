@@ -10,7 +10,7 @@ struct NNSearch
 	tree::KDTree
 end
 
-function voronoi(x::Matrix, iter=1000, particles=1; tmax=1000, eps=1e-8, maxstuck=Inf)
+function voronoi(x::Matrix, iter=1000, particles=1; tmax=1000, eps=1e-8, maxstuck=typemax(Int))
 	P = vecvec(x)
 	searcher = NNSearch(tmax, eps, KDTree(x))
 	s0 = descent(P, P[collect(1:particles)], searcher)
@@ -52,7 +52,7 @@ end
 
 
 """ starting at vertices, walk nsteps along the voronoi graph to find new vertices """
-function walk(S0, nsteps, PP, searcher, maxstuck = Inf)
+function walk(S0, nsteps, PP, searcher, maxstuck = typemax(Inf))
 	S = empty(S0)
 	nonew = 0
 	prog = Progress(maxstuck, 1, "Voronoi walk")
