@@ -3,7 +3,7 @@ export TripleWell, LJCluster
 
 abstract type Model end
 
-EMSimulation(m::Model) = EMSimulation(x0 = x0default(m))
+EMSimulation(m::Model) = EMSimulation()
 potential(m::Model, x) = Base.error("undefined potential for model $m")
 potential(m::Model) = x->potential(m, x)
 x0default(m::Model) = Base.error("undefined x0 for model $m")
@@ -50,6 +50,8 @@ end
     sigma = 1/2
 	box = [-ones(6) ones(6)] .* 0.8
 end
+
+EMSimulation(m::LJCluster) = EMSimulation(dt=0.001, maxdelta=0.1)
 
 x0default(::LJCluster) = [0.19920158482463968, 0.13789462153196408, -0.1709575705426315, 0.0784533378749835, 0.06778720715969005, -0.2112155752270007]
 potential(m::LJCluster, x) = lennard_jones_harmonic(x; sigma=m.sigma, epsilon=m.epsilon, harm=m.harm)

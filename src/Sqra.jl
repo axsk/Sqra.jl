@@ -28,7 +28,7 @@ include("eulermaruyama.jl")
 
 # voronoi
 include("picking.jl")
-include("voronoi_lp.jl")
+#include("voronoi_lp.jl")
 
 # sparse boxes
 include("sparseboxes.jl")
@@ -36,11 +36,12 @@ include("spdistances.jl")
 
 # sqra
 include("sqra_core.jl")
-
+include("committor.jl")
 # models and experiments
 #include("lennardjones.jl")
 include("models.jl")
 include("experiment.jl")
+include("experiment2.jl")
 #include("batch.jl")
 include("errors.jl")
 

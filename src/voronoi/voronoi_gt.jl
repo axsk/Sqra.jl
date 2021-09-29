@@ -38,7 +38,8 @@ function descent(PP, P, searcher)
 				u = -u
 				(tau, t) = raygen(sig, r, u, PP, searcher)
 			end
-			#@show (tau, t)
+			if t == Inf
+				error("Could not find a vertex in both directions of current point, consider increasing tmax")
 			if !(tau in Sdm1)
 				push!(Sdm1, tau)
 				push!(Sdm2, r + t*u)
