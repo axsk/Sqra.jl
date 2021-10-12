@@ -66,7 +66,7 @@ function connectivity_matrix(vertices, P::AbstractVector)
 		push!(J, g2)
 		A = boundary_area_edges(g1, g2, sigs, P)
 		h = norm(P[g1] - P[g2]) / 2
-		v = A * h / dim
+		v = A * h / dim  # volume computation
 		push!(V, A/h)
 		Vs[g1] += v
 		Vs[g2] += v

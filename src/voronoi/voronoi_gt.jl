@@ -18,6 +18,14 @@ function voronoi(x::Matrix, iter=1000, particles=1; tmax=1000, eps=1e-8, maxstuc
 	return v::Vertices, P
 end
 
+function voronoi2(x::Matrix, iter=1000, particles=1; tmax=1000, eps=1e-8, maxstuck=typemax(Int))
+	P = vecvec(x)
+	searcher = NNSearch(tmax, eps, KDTree(x))
+	s0 = descent(P, P[collect(1:particles)], searcher)
+	v = explore(s0, P, searcher)
+	return v::Vertices, P
+end
+
 vecvec(x::Matrix) = map(SVector{size(x,1)}, eachcol(x))
 vecvec(x::Vector{<:SVector}) = x
 
@@ -91,8 +99,44 @@ function walkray(v, r, xs, searcher)
 	return v, r
 end
 
+function walkray(v, r, xs, searcher, i)
+	e = v[1:end .!= i]
+	u = randray(xs[e])
+	if (u' * (xs[v[i]] - xs[e[1]])) > 0
+		u = -u
+	end
+	vv, t = raygen(e, r, u, xs, searcher)
+	if t < Inf
+		v = vv
+		r = r + t*u
+	end
+	return v, r
+end
+
 
 raygen(x...) = raycast_incircle(x...)
+
+function explore(S0, generators, searcher)
+	Q = copy(S0)
+	S = empty(Q)
+	hit = 0
+	miss = 0
+	while length(Q) > 0
+		(v,r) = pop!(Q)
+		for i in 1:length(v)
+			vn, rn = walkray(v, r, generators, searcher, i)
+			if !haskey(S, vn)
+				push!(Q, vn => rn)
+				push!(S, vn => rn)
+				hit += 1
+			else
+				miss += 1
+			end
+		end
+	end
+	@show hit, miss
+	return S
+end
 
 
 

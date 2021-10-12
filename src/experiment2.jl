@@ -35,7 +35,6 @@ function discretize(setup::Setup2{SqraVoronoi}, x, u)
 	viter =	setup.discretization.viter
 	vstuck = setup.discretization.vstuck
 	tmax = setup.discretization.tmax
-
 	x, idxs, _ = picking(x, npick)
 	v, P = Voronoi.voronoi(x, viter; maxstuck = vstuck, tmax=tmax)
 	A, Vs = Voronoi.connectivity_matrix(v, P)
