@@ -25,8 +25,8 @@ end
 
 function Experiment(setup::Setup2)
 	samples, u = run(setup.sampler, setup.model, setup.x0)
-	Q, x = discretize(setup, samples, u)
-	committor = cmt(setup, (Q,x ))
+	Q, x, report = discretize(setup, samples, u)
+	c = committor(setup, (Q,x ))
 	(; (@locals)...)
 end
 
@@ -40,17 +40,17 @@ function discretize(setup::Setup2{SqraVoronoi}, x, u)
 	v, P = Voronoi.voronoi(x, viter; maxstuck = vstuck, tmax=tmax)
 	A, Vs = Voronoi.connectivity_matrix(v, P)
 	Q = sqra(u[idxs], A, beta(setup.model))
-	return (Q, x)
+	return (Q, x, ())
 end
 
 function discretize(setup::Setup2{SqraSparseBox}, x, u)
 	sb = SparseBoxes(x, setup.discretization.level, setup.model.box)
 	Q, picks = sqra(sb, u, sigma(setup.model))
-	return (Q, x[:, picks])
+	return (Q, x[:, picks], (;picks, sb))
 end
 
-function cmt(setup::Setup2, (Q, x))
+function committor(setup::Setup2, (Q, x))
 	model = setup.model
 	classes = classify(model, x)
-	cmt = committor(Q, classes, maxiter = setup.committor.solveriter)
+	c = committor(Q, classes, maxiter = setup.committor.solveriter)
 end

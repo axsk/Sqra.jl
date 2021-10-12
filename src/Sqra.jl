@@ -37,16 +37,20 @@ include("spdistances.jl")
 # sqra
 include("sqra_core.jl")
 include("committor.jl")
+
+
+module Voronoi
+	include("voronoi/Voronoi.jl")
+end
+
 # models and experiments
 #include("lennardjones.jl")
 include("models.jl")
 include("experiment.jl")
 include("experiment2.jl")
-#include("batch.jl")
-include("errors.jl")
 
-module Voronoi
-	include("voronoi/Voronoi.jl")
-end
+include("errors.jl")
+include("convergence.jl")
+
 
 end

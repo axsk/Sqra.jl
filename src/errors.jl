@@ -9,11 +9,15 @@ function error_voronoi_sb(x, sb::SparseBoxesDict, u1, u2)
 	c = cartesiancoords(x, sb.level)
 	k = keys(sb.dict) |> collect
 	err = 0.
+	n = 0
 	for (i, coord) in enumerate(eachcol(c))
 		j = findfirst(x->x==coord, k)
-		err += sum(abs2, u1[i] - u2[j])
+		if j != nothing
+			err += sum(abs2, u1[i] - u2[j])
+			n += 1
+		end
 	end
-	sqrt(err) / size(c, 2)
+	sqrt(err / n)
 end
 
 using NearestNeighbors
@@ -24,7 +28,7 @@ function error_voronoi_voronoi(x, y, u1, u2)
 	tree = KDTree(y)
 	idxs, _ = nn(tree, x)
 	err = sum(abs2, u1 .- u2[idxs])
-	sqrt(err) / size(x, 2)
+	sqrt(err / size(x, 2))
 end
 
 "symmetric average error of two voronoi tesselations"
@@ -35,41 +39,29 @@ function error_voronoi_symmetric(x, y, u1, u2)
 end
 
 
-struct isVoronoi end
-struct isSparseBoxes end
-
-function classify_experiment(e)
-	if haskey(e, :sb)
-		return isSparseBoxes()
-	elseif haskey(e, :npick)
-		return isVoronoi()
-	else
-		Base.error()
-	end
-end
-
-
 # first argument is considered to be the truth
+
+isVoronoi = Setup2{SqraVoronoi}
+isSparseBoxes = Setup2{SqraSparseBox}
 
 # approx
 error(_::isVoronoi, _::isVoronoi, e1, e2) =
-	error_voronoi_voronoi(e1.x, e2.x, e1.cmt, e2.cmt)
+	error_voronoi_voronoi(e1.x, e2.x, e1.c, e2.c)
 
 # exact
 error(_::isSparseBoxes, _::isSparseBoxes, e1, e2) =
-	sp_mse(e1.cmt, e2.cmt, e1.sb, e2.sb)
+	sp_rmsd(e1.c, e2.c, e1.report.sb, e2.report.sb)
 
 # approx
 error(::isVoronoi, _::isSparseBoxes, e1, e2) =
-	error_voronoi_sb(e1.x, e2.sb, e1.cmt, e2.cmt)
+	error_voronoi_sb(e1.x, e2.report.sb, e1.c, e2.c)
 
 # approx
 error(::isSparseBoxes, ::isVoronoi, e1, e2) =
-	error_voronoi_voronoi(e1.x[:,e1.picks], e2.x, e1.cmt, e2.cmt)
-
+	error_voronoi_voronoi(e1.x, e2.x, e1.c, e2.c)
 
 function error(e1,e2)
-	t1 = classify_experiment(e1)
-	t2 = classify_experiment(e2)
+	t1 = e1.setup
+	t2 = e2.setup
 	error(t1,t2,e1,e2)
 end

@@ -15,9 +15,11 @@ classify(m::Model, x::Matrix) = mapslices(x->classify(m, x), x, dims=1) |> vec
 ### Triple Well
 
 @with_kw struct TripleWell <: Model
-	sigma = 2.
+	sigma = 1.
 	box = [-3. 3; -2 2]
 end
+
+EMSimulation(m::TripleWell) = EMSimulation()
 
 x0default(m::TripleWell) = [0., 0.]
 

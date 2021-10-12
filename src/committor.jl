@@ -21,22 +21,22 @@ end
 
 " solve the committor system where we encode A==1 and B as anything != 0 or 1"
 function committor_system(Q, classes)
- if isnothing(findfirst(x->x>0, classes)) || 
+  if isnothing(findfirst(x->x>0, classes)) || 
     isnothing(findfirst(x->x<0, classes))
-    Base.error("committor boundary is not well specified")
- end
-    #QQ = copy(Q)
+    @warn "committor boundary is not well specified"
+  end
+  #QQ = copy(Q)
 	QQ = sparse(Q') # we work on the transpose since csc column access is fast
-    b = copy(classes)
-    for i in 1:length(classes)
-        if b[i] != 0  # we have a boundary condition
-            QQ[:,i] .= 0
+	b = copy(classes)
+	for i in 1:length(classes)
+		if b[i] != 0  # we have a boundary condition
+			QQ[:,i] .= 0
 			zerocol!(QQ, i)  # note that we work with the transpose
-            QQ[i,i] = 1
-            if b[i] != 1  # boundary is not 1
-                b[i] = 0
-            end
-        end
+			QQ[i,i] = 1
+			if b[i] != 1  # boundary is not 1
+				b[i] = 0
+			end
+		end
 
 		# in the case of Inf outbound rates, ignore this state
 		#= alternative to fixinf
@@ -44,11 +44,8 @@ function committor_system(Q, classes)
 			zerocol!(QQ, i)
 		end
 		=#
-    end
+  end
 	QQ = sparse(QQ')
-	#c = QQ \ b
-
-    #return c, QQ, b
 	return QQ, Float64.(b)
 end
 

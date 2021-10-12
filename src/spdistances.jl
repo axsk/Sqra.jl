@@ -5,7 +5,7 @@ using SparseArrays
 # mean squared error of two scalar functions (not densities!) on two respective
 # sparse box distributions integrated over their common support
 # returns the error and the common volume
-function sp_mse(x1, x2, d1, d2, w1=ones(length(x1)), w2=ones(length(x2)))
+function sp_rmsd(x1, x2, d1, d2, w1=ones(length(x1)), w2=ones(length(x2)))
 	v = sb_overlap(d1,d2)
 	I,J,V = findnz(v)
 	e = 0.

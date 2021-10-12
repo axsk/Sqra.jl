@@ -18,12 +18,11 @@ end
 	end
 end
 
-@testset "Setup2" begin
-	for m in [Sqra.TripleWell(), Sqra.LJCluster()]
-		for d in [Sqra.SqraVoronoi(), Sqra.SqraSparseBox()]
-			s = Sqra.Setup2(model=m, discretization=d)
-			Sqra.Experiment(s)
-		end
+@testset "Setup2 TripleWell" begin
+	m = Sqra.TripleWell()
+	for d in [Sqra.SqraVoronoi(), Sqra.SqraSparseBox()]
+		s = Sqra.Setup2(model=m, discretization=d)
+		@test (Sqra.Experiment(s); true)
 	end
 end
 
