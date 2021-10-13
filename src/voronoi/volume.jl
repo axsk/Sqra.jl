@@ -3,7 +3,7 @@ using Polyhedra
 using ProgressMeter
 using SparseArrays
 
-boundary_area_verts(((g1, g2), inds), v, p) = boundary(g1,g2,inds, v, p)[1]
+boundary_area_verts(((g1, g2), inds), v, p) = boundary_vrep(g1,g2,inds, v, p)[1]
 boundary_area_edges(((g1, g2), inds), p) = boundary_area_edges(g1,g2,inds, p)
 
 """ given two generators `g1`, `g2`, `vertices` of their common boundary
@@ -11,7 +11,7 @@ boundary_area_edges(((g1, g2), inds), p) = boundary_area_edges(g1,g2,inds, p)
 It works by constructing a polytope from halfspaces between the generators of the boundary
 vertices. We use an affine transformation to get rid of the dimension in direction g1->g2
 """
-function boundary_area_edges(g1::Int, g2::Int, vertices::SVertices, generators)
+function boundary_area_edges(g1::Int, g2::Int, vertices::AbstractVector{<:Vertex}, generators)
 	A = generators[g1]
 	B = generators[g2]
 	transform = transformation(A, B)
@@ -30,13 +30,19 @@ function boundary_area_edges(g1::Int, g2::Int, vertices::SVertices, generators)
 	halfspaces = [h for h in halfspaces]
 
 	poly = polyhedron(hrep(halfspaces))
+	# performance with libs 6x100 
+	# nolib: 30 mins
+	# CDDLib: 40 mins
+	# QHull: 5h (with warnings about not affine polyhedron using a solver)
+
 	#!hasrays(poly) && plot!(poly)
 	vol = try
 			volume(poly)
 		catch e
+			#@show e
 			vol = Inf  # TODO: check if Inf, 0 and -1 are handled correctly here
 		end
-	vol == -1 && (ol = 0)
+	vol == -1 && (vol = 0)
 	return vol
 end
 
@@ -74,7 +80,7 @@ function connectivity_matrix(vertices, P::AbstractVector)
 	A = sparse(I, J, V, length(P), length(P))
 	A = A + A'
 	Vs = replace(Vs, 0 => Inf)  # if we have 0 volume, we have no rates
-	Vsi = 1 ./ Vs # check if we want row or col
+	Vsi = 1 ./ Vs # TODO: check if we want row or col
 	A = A .* Vsi
 	return A, Vs
 end
@@ -88,7 +94,7 @@ function adjacency(v::Vertices)
 	for (sig, r) in v
 		for a in sig
 			for b in sig
-				a <= b && continue
+				a >= b && continue
 				v = get!(conns, (a,b), [])
 				push!(v, sig)
 			end
@@ -101,7 +107,7 @@ using Polyhedra
 
 
 """ similar to `boundary_area_edges`, however uses a vector representation and is slower """
-function boundary(g1::Int, g2::Int, inds::AbstractVector{<:SVertex}, vertices::Vertices, generators)
+function boundary_vrep(g1::Int, g2::Int, inds::AbstractVector{<:Vertex}, vertices::Vertices, generators)
 	A = generators[g1]
 	B = generators[g2]
 	dim = length(A)
@@ -116,4 +122,30 @@ function boundary(g1::Int, g2::Int, inds::AbstractVector{<:SVertex}, vertices::V
 	h = norm(B - A) / 2
 	A = dim * V / h
 	A, h, V
+end
+
+function dict2(v)
+	pair = Dict()
+	for k in v
+			for i in k
+					for j in k
+							i >= j && continue
+							p = get!(pair, (i,j), [])
+							kk = filter(x->!in(x, [i,j]), k)
+							push!(p, kk)
+					end
+			end
+	end
+	pair
+end
+
+function dict1(v)
+	d = Dict()
+	for k in v
+		for i in k
+			p = get!(d, i, [])
+			push!(p, k)
+		end
+	end
+	d
 end
