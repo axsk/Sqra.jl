@@ -1,6 +1,6 @@
 function test_volume(npoints = 100, dim = 3)
 	x = rand(dim, npoints)
-	@time v, p = voronoi(x, 10000)
+	@time v, p = voronoi_random(x, 10000)
 	@time a = adjacency(v)
 	@time av = [boundary_area_verts(a, v, p) for a in a]
 	@time ae = [boundary_area_edges(a, p) for a in a]
@@ -13,7 +13,7 @@ end
 
 function test_random(d=6, n=200)
 	x = rand(d, n)
-	@time v,p = voronoi(rand(d,n), 10_000_000; maxstuck=100_000);
+	@time v,p = voronoi_random(rand(d,n), 10_000_000; maxstuck=100_000);
 	@show length(v)
 	a = adjacency(v)
 	println("avg. no. of neighbors: ", length(a)/n)
@@ -27,7 +27,7 @@ function test_grid(n=5, iter=10000)
 	plot(legend=false);
 	x = hcat(hexgrid(n)...)
 	x .+= randn(2,n*n) .* 0.01
-	@time v, P  = voronoi(x, iter)
+	@time v, P  = voronoi_random(x, iter)
 
 	v = Dict(filter(collect(v)) do (k,v)
 		norm(v) < 10

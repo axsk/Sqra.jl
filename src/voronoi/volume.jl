@@ -11,7 +11,7 @@ boundary_area_edges(((g1, g2), inds), p) = boundary_area_edges(g1,g2,inds, p)
 It works by constructing a polytope from halfspaces between the generators of the boundary
 vertices. We use an affine transformation to get rid of the dimension in direction g1->g2
 """
-function boundary_area_edges(g1::Int, g2::Int, vertices::AbstractVector{<:Vertex}, generators)
+function boundary_area_edges(g1::Int, g2::Int, vertices::AbstractVector{<:Sigma}, generators)
 	A = generators[g1]
 	B = generators[g2]
 	transform = transformation(A, B)
@@ -30,7 +30,7 @@ function boundary_area_edges(g1::Int, g2::Int, vertices::AbstractVector{<:Vertex
 	halfspaces = [h for h in halfspaces]
 
 	poly = polyhedron(hrep(halfspaces))
-	# performance with libs 6x100 
+	# performance with libs 6x100
 	# nolib: 30 mins
 	# CDDLib: 40 mins
 	# QHull: 5h (with warnings about not affine polyhedron using a solver)
@@ -107,7 +107,7 @@ using Polyhedra
 
 
 """ similar to `boundary_area_edges`, however uses a vector representation and is slower """
-function boundary_vrep(g1::Int, g2::Int, inds::AbstractVector{<:Vertex}, vertices::Vertices, generators)
+function boundary_vrep(g1::Int, g2::Int, inds::AbstractVector{<:Sigma}, vertices::Vertices, generators)
 	A = generators[g1]
 	B = generators[g2]
 	dim = length(A)

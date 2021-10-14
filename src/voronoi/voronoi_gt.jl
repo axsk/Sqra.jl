@@ -1,37 +1,32 @@
 const Point{T} = AbstractVector{T} where T<:Real
 const Points = AbstractVector{<:Point}
-const Vertex = AbstractVector{<:Integer}  # encoded by the ids of its generators
-const Vertices = Dict{<:Vertex, <:Point}
-
-# TODO: probably want a struct for each raycast algorithm
-struct NNSearch
-	tmax::Float64
-	eps::Float64
-	tree::KDTree
-end
+const Sigma = AbstractVector{<:Integer}  # encoded by the ids of its generators
+const Vertex = Tuple{<:Sigma, <: Point}
+const Vertices = Dict{<:Sigma, <:Point}  # sig -> coords
 
 struct SearchIncircle
 	tmax::Float64
 	tree::KDTree
 end
 
+voronoi(x; kwargs...) = voronoi(vecvec(x); kwargs...)
 
 """ construct the voronoi diagram from `x` through breadth-first search """
-function voronoi(x::Matrix; tmax=1000, eps=1e-8)
-	P = vecvec(x)
-	searcher = NNSearch(tmax, eps, KDTree(x))
-	s0 = descent(P, searcher)
-	v = explore(s0, P, searcher)
-	return v::Vertices, P
+function voronoi(xs::Points; tmax=1000)
+	searcher = SearchIncircle(tmax, KDTree(xs))
+	sig, r = descent(xs, searcher)
+	v = explore(sig, r, xs, searcher)
+	return v::Vertices, xs
 end
 
+voronoi_random(x, args...; kwargs...) = voronoi_random(vecvec(x), args...; kwargs...)
+
 """ construct a (partial) voronoi diagram from `x` through a random walk """
-function voronoi_random(x::Matrix, iter=1000, particles=1; tmax=1000, eps=1e-8, maxstuck=typemax(Int))
-	P = vecvec(x)  # TODO: this can be handled nicer via dispatch
-	searcher = NNSearch(tmax, eps, KDTree(x))
-	s0 = descent(P[1], P, searcher)
-	v = walk!(s0, iter, P, searcher, maxstuck)
-	return v::Vertices, P
+function voronoi_random(xs::Points, iter=1000; tmax=1000, maxstuck=typemax(Int))
+	searcher = SearchIncircle(tmax, KDTree(xs))
+	sig, r = descent(xs, searcher)
+	v = walk!(sig, r, iter, xs, searcher, maxstuck)
+	return v::Vertices, xs
 end
 
 vecvec(x::Matrix) = map(SVector{size(x,1)}, eachcol(x))
@@ -56,28 +51,26 @@ function descent(xs::Points, searcher, start = 1)
 		sig = tau
 		r = r + t*u
 	end
-	return Dict(sig => r)
+	return (sig, r)::Vertex
 end
 
 
 """ starting at vertices, walk nsteps along the voronoi graph to find new vertices """
-function walk!(sigs::Vertices, nsteps::Int, PP::Points, searcher, maxstuck = typemax(Inf))
-	S = sigs
+function walk!(sig::Sigma, r::Point, nsteps::Int, xs::Points, searcher, maxstuck = typemax(Inf))
+	S = Dict(sig => r)
 	nonew = 0
 	prog = Progress(maxstuck, 1, "Voronoi walk")
 	progmax = 0
-	for (v, r) in S0  # todo: devectorize
-		for s in 1:nsteps
-			nonew += 1
-			progmax = max(progmax, nonew)
-			ProgressMeter.update!(prog, progmax)
-			v, r = walkray(v, r, PP, searcher)
-			get!(S, v) do
-				nonew = 0
-				return r
-			end
-			nonew > maxstuck && break
+	for s in 1:nsteps
+		nonew += 1
+		progmax = max(progmax, nonew)
+		ProgressMeter.update!(prog, progmax)
+		sig, r = walkray(sig, r, xs, searcher)
+		get!(S, sig) do
+			nonew = 0
+			return r
 		end
+		nonew > maxstuck && break
 	end
 	return S
 end
@@ -86,7 +79,7 @@ end
 walkray(v, r, xs, searcher) = walkray(v, r, xs, searcher, rand(1:length(v)))
 
 """ find the vertex connected to `v` by moving away from its `i`-th generator """
-function walkray(v::Vertex, r::Point, xs::Points, searcher, i)
+function walkray(v::Sigma, r::Point, xs::Points, searcher, i)
 	#e = v[1:end .!= i]
 	e = deleteat(v, i)
 	u = randray(xs[e])
@@ -102,8 +95,9 @@ function walkray(v::Vertex, r::Point, xs::Points, searcher, i)
 end
 
 """ BFS of vertices starting from `S0` """
-function explore(S0::Vertices, generators::Points, searcher)
-	Q = copy(S0)
+function explore(sig, r, generators::Points, searcher)
+	#Q = copy(S0)
+	Q = Dict(sig=>r)
 	S = empty(Q)
   Z = Dict{Vector{Int64}, Int}()
 
@@ -180,12 +174,11 @@ function randray(x::Points)
 end
 
 
-# default to incircle raycasting
-raycast(x...) = raycast_incircle(x...)
+struct SearchBruteforce end
 
 """ shooting a ray in the given direction, find the next connecting point.
 This is the bruteforce variant, using a linear search to find the closest point """
-function raycast_bruteforce(sig::Vertex, r, u, P)
+function raycast(sig::Sigma, r, u, P, searcher::SearchBruteforce)
 	eps = 1e-10
 	(tau, ts) = [0; sig], Inf
 	x0 = P[sig[1]]
@@ -207,9 +200,15 @@ function raycast_bruteforce(sig::Vertex, r, u, P)
 	return sort(tau), ts
 end
 
+
+struct SearchBisection
+	eps::Float64
+	tree::KDTree
+end
+
 """ shooting a ray in the given direction, find the next connecting point.
 This variant (by Poliaski, Pokorny) uses a binary search """
-function raycast_intersect(sig::Vertex, r::Point, u::Point, P::Points, searcher::NNSearch)
+function raycast(sig::Sigma, r::Point, u::Point, P::Points, searcher::SearchBisection)
 	tau, tl, tr = [], 0, searcher.tmax
 	x0 = P[sig[1]]
 	iter = 0
@@ -242,7 +241,7 @@ end
 
 """ Shooting a ray in the given direction, find the next connecting point.
 This variant uses an iterative NN search """
-function raycast_incircle(sig::Vertex, r::Point, u::Point, P::Points, searcher::NNSearch)
+function raycast(sig::Sigma, r::Point, u::Point, P::Points, searcher::SearchIncircle)
 	i = 0
 	t = 1
 	x0 = P[sig[1]]
