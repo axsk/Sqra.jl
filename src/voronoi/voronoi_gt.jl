@@ -25,7 +25,7 @@ voronoi_random(x, args...; kwargs...) = voronoi_random(vecvec(x), args...; kwarg
 function voronoi_random(xs::Points, iter=1000; tmax=1000, maxstuck=typemax(Int))
 	searcher = SearchIncircle(tmax, KDTree(xs))
 	sig, r = descent(xs, searcher)
-	v = walk!(sig, r, iter, xs, searcher, maxstuck)
+	v = walk(sig, r, iter, xs, searcher, maxstuck)
 	return v::Vertices, xs
 end
 
@@ -33,7 +33,7 @@ vecvec(x::Matrix) = map(SVector{size(x,1)}, eachcol(x))
 vecvec(x::Vector{<:SVector}) = x
 
 """ starting at given points, run the ray shooting descent to find vertices """
-function descent(xs::Points, searcher, start = 1)
+function descent(xs::Points, searcher, start = 1) :: Vertex
 	sig = [start]
 	r = xs[start]
 	d = length(r)
@@ -51,13 +51,13 @@ function descent(xs::Points, searcher, start = 1)
 		sig = tau
 		r = r + t*u
 	end
-	return (sig, r)::Vertex
+	return (sig, r)
 end
 
 
 """ starting at vertices, walk nsteps along the voronoi graph to find new vertices """
-function walk!(sig::Sigma, r::Point, nsteps::Int, xs::Points, searcher, maxstuck = typemax(Inf))
-	S = Dict(sig => r)
+function walk(sig::Sigma, r::Point, nsteps::Int, xs::Points, searcher, maxstuck::Int) :: Vertices
+	verts = Dict(sig => r)
 	nonew = 0
 	prog = Progress(maxstuck, 1, "Voronoi walk")
 	progmax = 0
@@ -66,13 +66,13 @@ function walk!(sig::Sigma, r::Point, nsteps::Int, xs::Points, searcher, maxstuck
 		progmax = max(progmax, nonew)
 		ProgressMeter.update!(prog, progmax)
 		sig, r = walkray(sig, r, xs, searcher)
-		get!(S, sig) do
+		get!(verts, sig) do
 			nonew = 0
 			return r
 		end
 		nonew > maxstuck && break
 	end
-	return S
+	return verts
 end
 
 """ starting at vertex (v,r), return a random adjacent vertex """
@@ -95,11 +95,10 @@ function walkray(v::Sigma, r::Point, xs::Points, searcher, i)
 end
 
 """ BFS of vertices starting from `S0` """
-function explore(sig, r, generators::Points, searcher)
-	#Q = copy(S0)
-	Q = Dict(sig=>r)
-	S = empty(Q)
-  Z = Dict{Vector{Int64}, Int}()
+function explore(sig, r, xs::Points, searcher) :: Vertices
+	verts = Dict(sig=>r)
+	queue = copy(verts)
+  	edgecount = Dict{Vector{Int64}, Int}()
 
 	cache = true
 	hit = 0
@@ -107,29 +106,29 @@ function explore(sig, r, generators::Points, searcher)
 	conts = 0
 	infs = 0
 
-	while length(Q) > 0
-		(v,r) = pop!(Q)
+	while length(queue) > 0
+		(v,r) = pop!(queue)
 		for i in 1:length(v)
 
-			if cache && get(Z, deleteat(v, i), 0) == 2
+			if cache && get(edgecount, deleteat(v, i), 0) == 2
 				conts += 1
 				continue
 			end
 
-			vn, rn = walkray(v, r, generators, searcher, i)
+			vn, rn = walkray(v, r, xs, searcher, i)
 
 			if vn == v
 				infs += 1
 				continue
 			end
 
-			if !haskey(S, vn)
-				push!(Q, vn => rn)
-				push!(S, vn => rn)
+			if !haskey(verts, vn)
+				push!(queue, vn => rn)
+				push!(verts, vn => rn)
 				if cache
 					for j in 1:length(vn)
-						vj = deleteat(vn, j)
-						Z[vj] = get(Z, vj, 0) + 1
+						edge = deleteat(vn, j)
+						edgecount[edge] = get(edgecount, edge, 0) + 1
 					end
 				end
 				hit += 1
@@ -141,7 +140,7 @@ function explore(sig, r, generators::Points, searcher)
 
 	end
 	@show hit, miss, conts, infs
-	return S
+	return verts
 end
 
 deleteat(v, i) = deleteat!(copy(v), i)
@@ -151,14 +150,14 @@ deleteat(v, i) = deleteat!(copy(v), i)
 
 
 """ generate a random ray orthogonal to the subspace spanned by the given points """
-function randray(x::Points)
-	k = length(x)
-	d = length(x[1])
-	v = similar(x, k-1)
+function randray(xs::Points)
+	k = length(xs)
+	d = length(xs[1])
+	v = similar(xs, k-1)
 
 	# Gram Schmidt
 	for i in 1:k-1
-		v[i] = x[i] .- x[k]
+		v[i] = xs[i] .- xs[k]
 		for j in 1:(i-1)
 			v[i] = v[i] .- dot(v[i], v[j]) .* v[j]
 		end
@@ -178,13 +177,13 @@ struct SearchBruteforce end
 
 """ shooting a ray in the given direction, find the next connecting point.
 This is the bruteforce variant, using a linear search to find the closest point """
-function raycast(sig::Sigma, r, u, P, searcher::SearchBruteforce)
+function raycast(sig::Sigma, r, u, xs, searcher::SearchBruteforce)
 	eps = 1e-10
 	(tau, ts) = [0; sig], Inf
-	x0 = P[sig[1]]
-	for i in 1:length(P)
+	x0 = xs[sig[1]]
+	for i in 1:length(xs)
 		i in sig && continue
-		x = P[i]
+		x = xs[i]
 		t = (sum(abs2, r .- x) - sum(abs2, r .- x0)) / (2 * u' * (x-x0))
 		if eps < t < ts
 			(tau, ts) = vcat(sig, [i]), t
@@ -208,16 +207,16 @@ end
 
 """ shooting a ray in the given direction, find the next connecting point.
 This variant (by Poliaski, Pokorny) uses a binary search """
-function raycast(sig::Sigma, r::Point, u::Point, P::Points, searcher::SearchBisection)
+function raycast(sig::Sigma, r::Point, u::Point, xs::Points, searcher::SearchBisection)
 	tau, tl, tr = [], 0, searcher.tmax
-	x0 = P[sig[1]]
+	x0 = xs[sig[1]]
 	iter = 0
 
 
 	while tr-tl > searcher.eps
 		tm = (tl+tr)/2
 		i, _ = nn(searcher.tree, r+tm*u)
-		x = P[i]
+		x = xs[i]
 		if i in sig
 			tl = tm
 		else
@@ -241,10 +240,10 @@ end
 
 """ Shooting a ray in the given direction, find the next connecting point.
 This variant uses an iterative NN search """
-function raycast(sig::Sigma, r::Point, u::Point, P::Points, searcher::SearchIncircle)
+function raycast(sig::Sigma, r::Point, u::Point, xs::Points, searcher::SearchIncircle)
 	i = 0
 	t = 1
-	x0 = P[sig[1]]
+	x0 = xs[sig[1]]
 	local d, n
 	# find a t large enough to include a non-boundary (sig) point
 	while t < searcher.tmax
@@ -268,7 +267,7 @@ function raycast(sig::Sigma, r::Point, u::Point, P::Points, searcher::SearchInci
 
 	# sucessively reduce incircles unless nothing new is found
 	while true
-		x = P[i]
+		x = xs[i]
 		t = (sum(abs2, r - x) - sum(abs2, r - x0)) / (2 * u' * (x-x0))
 		j, _ = nn(searcher.tree, r+t*u)
 		if j in [sig; i]
@@ -283,6 +282,7 @@ function raycast(sig::Sigma, r::Point, u::Point, P::Points, searcher::SearchInci
 	return tau, t
 end
 
+#=
 function raycast_compare(sig, r, u, P, searcher)
 	r1  = raycast_incircle(sig,r,u,P,searcher)
 	r2  = raycast_intersect(sig,r,u,P,searcher)
@@ -291,3 +291,4 @@ function raycast_compare(sig, r, u, P, searcher)
 	@assert r2[1] == r3[1]
 	return r1
 end
+=#

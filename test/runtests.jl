@@ -13,8 +13,10 @@ end
 	e1 = Sqra.Experiment(Setup())
 	e2 = Sqra.VExperiment(Setup())
 
-	for a in [e1, e2], b in [e1,e2]
-		Sqra.error(e1,e2)
+	@test_broken begin
+		for a in [e1, e2], b in [e1,e2]
+			Sqra.error(e1,e2)
+		end
 	end
 end
 
