@@ -4,27 +4,33 @@ const Vertex = AbstractVector{<:Integer}  # encoded by the ids of its generators
 const Vertices = Dict{<:Vertex, <:Point}
 
 # TODO: probably want a struct for each raycast algorithm
-struct NNSearch 
+struct NNSearch
 	tmax::Float64
 	eps::Float64
 	tree::KDTree
 end
 
-""" construct a voronoi diagram from `x` through a random walk """
-function voronoi(x::Matrix, iter=1000, particles=1; tmax=1000, eps=1e-8, maxstuck=typemax(Int))
-	P = vecvec(x)  # TODO: this can be handled nicer via dispatch
+struct SearchIncircle
+	tmax::Float64
+	tree::KDTree
+end
+
+
+""" construct the voronoi diagram from `x` through breadth-first search """
+function voronoi(x::Matrix; tmax=1000, eps=1e-8)
+	P = vecvec(x)
 	searcher = NNSearch(tmax, eps, KDTree(x))
-	s0 = descent(P, P[collect(1:particles)], searcher)
-	v = walk(s0, iter, P, searcher, maxstuck)
+	s0 = descent(P, searcher)
+	v = explore(s0, P, searcher)
 	return v::Vertices, P
 end
 
-""" construct a voronoi diagram from `x` through breadth-first search """
-function voronoi2(x::Matrix, iter=1000, particles=1; tmax=1000, eps=1e-8, maxstuck=typemax(Int))
-	P = vecvec(x)
+""" construct a (partial) voronoi diagram from `x` through a random walk """
+function voronoi_random(x::Matrix, iter=1000, particles=1; tmax=1000, eps=1e-8, maxstuck=typemax(Int))
+	P = vecvec(x)  # TODO: this can be handled nicer via dispatch
 	searcher = NNSearch(tmax, eps, KDTree(x))
-	s0 = descent(P, P[collect(1:particles)], searcher)
-	v = explore(s0, P, searcher)
+	s0 = descent(P[1], P, searcher)
+	v = walk!(s0, iter, P, searcher, maxstuck)
 	return v::Vertices, P
 end
 
@@ -32,39 +38,31 @@ vecvec(x::Matrix) = map(SVector{size(x,1)}, eachcol(x))
 vecvec(x::Vector{<:SVector}) = x
 
 """ starting at given points, run the ray shooting descent to find vertices """
-function descent(PP::Points, P::Points, searcher)
-	d = length(P[1])
-	Sd1 = [[i] for i in 1:length(P)]  # TODO: devectorize to use only one P
-	Sd2 = [xi for xi in P]
-	for k in d:-1:1
-		Sdm1 = []
-		Sdm2 = []
-		for (sig, r) in zip(Sd1, Sd2)
-			u = randray(PP[sig])
-			(tau, t) = raycast(sig, r, u, PP, searcher)
-			if t == Inf
-				#println("invert direction")
-				u = -u
-				(tau, t) = raycast(sig, r, u, PP, searcher)
-			end
-			if t == Inf
-				error("Could not find a vertex in both directions of current point." *
-					"Consider increasing search range (tmax)")
-			end
-			if !(tau in Sdm1)
-				push!(Sdm1, tau)
-				push!(Sdm2, r + t*u)
-			end
+function descent(xs::Points, searcher, start = 1)
+	sig = [start]
+	r = xs[start]
+	d = length(r)
+	for k in d:-1:1  # find an additional generator for each dimension
+		u = randray(xs[sig])
+		(tau, t) = raycast(sig, r, u, xs, searcher)
+		if t == Inf
+			u = -u
+			(tau, t) = raycast(sig, r, u, xs, searcher)
 		end
-		Sd1, Sd2 = Sdm1, Sdm2
+		if t == Inf
+			error("Could not find a vertex in both directions of current point." *
+				"Consider increasing search range (tmax)")
+		end
+		sig = tau
+		r = r + t*u
 	end
-	return Dict((a,b) for (a,b) in zip(Sd1, Sd2))  # transform to array of tuples
+	return Dict(sig => r)
 end
 
 
 """ starting at vertices, walk nsteps along the voronoi graph to find new vertices """
-function walk(S0::Vertices, nsteps::Int, PP::Points, searcher, maxstuck = typemax(Inf))
-	S = empty(S0)
+function walk!(sigs::Vertices, nsteps::Int, PP::Points, searcher, maxstuck = typemax(Inf))
+	S = sigs
 	nonew = 0
 	prog = Progress(maxstuck, 1, "Voronoi walk")
 	progmax = 0
@@ -118,23 +116,23 @@ function explore(S0::Vertices, generators::Points, searcher)
 	while length(Q) > 0
 		(v,r) = pop!(Q)
 		for i in 1:length(v)
-			
+
 			if cache && get(Z, deleteat(v, i), 0) == 2
 				conts += 1
 				continue
 			end
 
 			vn, rn = walkray(v, r, generators, searcher, i)
-			
-			if vn == v 
+
+			if vn == v
 				infs += 1
 				continue
 			end
-			
+
 			if !haskey(S, vn)
 				push!(Q, vn => rn)
 				push!(S, vn => rn)
-				if cache 
+				if cache
 					for j in 1:length(vn)
 						vj = deleteat(vn, j)
 						Z[vj] = get(Z, vj, 0) + 1
@@ -144,7 +142,7 @@ function explore(S0::Vertices, generators::Points, searcher)
 			else
 				miss += 1
 			end
-				
+
 		end
 
 	end
@@ -164,7 +162,7 @@ function randray(x::Points)
 	d = length(x[1])
 	v = similar(x, k-1)
 
-	# Gram Schmidt 
+	# Gram Schmidt
 	for i in 1:k-1
 		v[i] = x[i] .- x[k]
 		for j in 1:(i-1)
