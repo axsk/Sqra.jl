@@ -15,8 +15,8 @@ voronoi(x; kwargs...) = voronoi(vecvec(x); kwargs...)
 function voronoi(xs::Points; tmax=1000)
 	searcher = SearchIncircle(tmax, KDTree(xs))
 	sig, r = descent(xs, searcher)
-	v = explore(sig, r, xs, searcher)
-	return v::Vertices, xs
+	verts = explore(sig, r, xs, searcher)
+	return verts::Vertices, xs
 end
 
 voronoi_random(x, args...; kwargs...) = voronoi_random(vecvec(x), args...; kwargs...)
@@ -25,8 +25,8 @@ voronoi_random(x, args...; kwargs...) = voronoi_random(vecvec(x), args...; kwarg
 function voronoi_random(xs::Points, iter=1000; tmax=1000, maxstuck=typemax(Int))
 	searcher = SearchIncircle(tmax, KDTree(xs))
 	sig, r = descent(xs, searcher)
-	v = walk(sig, r, iter, xs, searcher, maxstuck)
-	return v::Vertices, xs
+	verts = walk(sig, r, iter, xs, searcher, maxstuck)
+	return verts::Vertices, xs
 end
 
 vecvec(x::Matrix) = map(SVector{size(x,1)}, eachcol(x))
@@ -76,29 +76,29 @@ function walk(sig::Sigma, r::Point, nsteps::Int, xs::Points, searcher, maxstuck:
 end
 
 """ starting at vertex (v,r), return a random adjacent vertex """
-walkray(v, r, xs, searcher) = walkray(v, r, xs, searcher, rand(1:length(v)))
+walkray(sig, r, xs, searcher) = walkray(sig, r, xs, searcher, rand(1:length(sig)))
 
 """ find the vertex connected to `v` by moving away from its `i`-th generator """
-function walkray(v::Sigma, r::Point, xs::Points, searcher, i)
+function walkray(sig::Sigma, r::Point, xs::Points, searcher, i)
 	#e = v[1:end .!= i]
-	e = deleteat(v, i)
-	u = randray(xs[e])
-	if (u' * (xs[v[i]] - xs[e[1]])) > 0
+	sig_del = deleteat(sig, i)
+	u = randray(xs[sig_del])
+	if (u' * (xs[sig[i]] - xs[sig_del[1]])) > 0
 		u = -u
 	end
-	vv, t = raycast(e, r, u, xs, searcher)
+	sig_new, t = raycast(sig_del, r, u, xs, searcher)
 	if t < Inf
-		v = vv
+		sig = sig_new
 		r = r + t*u
 	end
-	return v, r
+	return sig, r
 end
 
 """ BFS of vertices starting from `S0` """
 function explore(sig, r, xs::Points, searcher) :: Vertices
 	verts = Dict(sig=>r)
 	queue = copy(verts)
-  	edgecount = Dict{Vector{Int64}, Int}()
+  edgecount = Dict{Vector{Int64}, Int}()
 
 	cache = true
 	hit = 0
@@ -107,27 +107,27 @@ function explore(sig, r, xs::Points, searcher) :: Vertices
 	infs = 0
 
 	while length(queue) > 0
-		(v,r) = pop!(queue)
-		for i in 1:length(v)
+		(sig,r) = pop!(queue)
+		for i in 1:length(sig)
 
-			if cache && get(edgecount, deleteat(v, i), 0) == 2
+			if cache && get(edgecount, deleteat(sig, i), 0) == 2
 				conts += 1
 				continue
 			end
 
-			vn, rn = walkray(v, r, xs, searcher, i)
+			sig_new, r_new = walkray(sig, r, xs, searcher, i)
 
-			if vn == v
+			if sig_new == sig
 				infs += 1
 				continue
 			end
 
-			if !haskey(verts, vn)
-				push!(queue, vn => rn)
-				push!(verts, vn => rn)
+			if !haskey(verts, sig_new)
+				push!(queue, sig_new => r_new)
+				push!(verts, sig_new => r_new)
 				if cache
-					for j in 1:length(vn)
-						edge = deleteat(vn, j)
+					for j in 1:length(sig_new)
+						edge = deleteat(sig_new, j)
 						edgecount[edge] = get(edgecount, edge, 0) + 1
 					end
 				end
@@ -143,7 +143,7 @@ function explore(sig, r, xs::Points, searcher) :: Vertices
 	return verts
 end
 
-deleteat(v, i) = deleteat!(copy(v), i)
+deleteat(sig, i) = deleteat!(copy(sig), i)
 
 
 ## lowlevel subroutines
@@ -291,4 +291,72 @@ function raycast_compare(sig, r, u, P, searcher)
 	@assert r2[1] == r3[1]
 	return r1
 end
+=#
+
+#=
+# experiment with a 'skipping' initial guess
+function raycast(sig::Sigma, r::Point, u::Point, xs::Points, searcher::SearchIncircle)
+	i = 0
+	t = 1
+	x0 = xs[sig[1]]
+	local d, n
+	# find a t large enough to include a non-boundary (sig) point
+	@time while t < searcher.tmax
+		n, d = nn(searcher.tree, r+t*u)
+		if d==Inf
+			warn("d==Inf in raycast expansion, this should never happen")
+			return [0; sig], Inf
+		end
+
+		if n in sig
+			t = t * 2
+		else
+			i = n
+			break
+		end
+	end
+	skip(i) = (u' * (xs[i]-x0) <= 0) || i ∈ sig
+	@time dir, dd = nn(searcher.tree, r #=+ u * (u' * (x0-r))=#, skip)
+	dir == 0 && error()
+	@show t
+	if i == 0
+		@show Inf
+		@show dir, dd
+		sleep(1)
+		error()
+		return [0; sig], Inf
+	end
+
+	# sucessively reduce incircles unless nothing new is found
+	while true
+		x = xs[i]
+		t = (sum(abs2, r - x) - sum(abs2, r - x0)) / (2 * u' * (x-x0))
+		j, _ = nn(searcher.tree, r+t*u)
+		if j in [sig; i]
+			break
+		else
+			i = j
+		end
+	end
+
+	tau = sort([i; sig])
+
+	if false && dir != i
+		@show i, dir
+		c = r+t*u
+		@show norm(c-x0), norm(c-xs[i]), t
+
+		let x = xs[dir]
+			let t = (sum(abs2, r - x) - sum(abs2, r - x0)) / (2 * u' * (x-x0))
+				c = r+t*u
+				@show norm(c-x0), norm(c-x), t
+			end
+		end
+		@show skip(i)
+	end
+
+
+	return tau, t
+end
+
 =#

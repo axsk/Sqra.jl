@@ -3,9 +3,6 @@ using Polyhedra
 using ProgressMeter
 using SparseArrays
 
-boundary_area_verts(((g1, g2), inds), v, p) = boundary_vrep(g1,g2,inds, v, p)[1]
-boundary_area_edges(((g1, g2), inds), p) = boundary_area_edges(g1,g2,inds, p)
-
 """ given two generators `g1`, `g2`, `vertices` of their common boundary
 (in generator representation) and the list of all generators, compute the boundary volume.
 It works by constructing a polytope from halfspaces between the generators of the boundary
@@ -35,19 +32,12 @@ function boundary_area_edges(g1::Int, g2::Int, vertices::AbstractVector{<:Sigma}
 	# CDDLib: 40 mins
 	# QHull: 5h (with warnings about not affine polyhedron using a solver)
 
-	#!hasrays(poly) && plot!(poly)
-	vol = try
-			volume(poly)
-		catch e
-			#@show e
-			vol = Inf  # TODO: check if Inf, 0 and -1 are handled correctly here
-		end
-	vol == -1 && (vol = 0)
+	vol = hasrays(poly) ? Inf : volume(poly)
 	return vol
 end
 
 """ affine transformation rotatinig and translating such that the boundary is aligned with
-the first dimension. A->B will be mapped to [1,0,0,...] and (A+B)/2 to [0,0,...] """
+the first dimension. A->B will be mapped to const*[1,0,0,...] and (A+B)/2 to [0,0,...] """
 function transformation(A, B)
 	R = diagm(ones(length(A)))
 	R[:,1] = B-A
@@ -57,28 +47,34 @@ function transformation(A, B)
 end
 
 """ build the connectivity matrix for the SQRA from adjacency and boundary information """
-function connectivity_matrix(vertices, P::AbstractVector)
+function area_volume(vertices, P::AbstractVector)
 	dim = length(P[1])
 	conns = adjacency(vertices)
-	#@show length(conns)
-	#Ahv = boundaries(vertices, conns, P)
+
 	I = Int[]
 	J = Int[]
 	V = Float64[]
 	Vs = zeros(length(P))
+
 	@showprogress 1 "Voronoi adjacency " for ((g1,g2), sigs) in conns
-	#for ((A, h, v), (g1,g2)) in zip(Ahv, keys(conns))
-		push!(I, g1)
-		push!(J, g2)
 		A = boundary_area_edges(g1, g2, sigs, P)
 		h = norm(P[g1] - P[g2]) / 2
 		v = A * h / dim  # volume computation
+		push!(I, g1)
+		push!(J, g2)
 		push!(V, A/h)
 		Vs[g1] += v
 		Vs[g2] += v
 	end
 	A = sparse(I, J, V, length(P), length(P))
 	A = A + A'
+
+	return A, Vs
+end
+
+# for the sqra
+function connectivity_matrix(vertices, P::AbstractVector)
+	A, Vs = area_volume(vertices, P)
 	Vs = replace(Vs, 0 => Inf)  # if we have 0 volume, we have no rates
 	Vsi = 1 ./ Vs # TODO: check if we want row or col
 	A = A .* Vsi
@@ -122,30 +118,4 @@ function boundary_vrep(g1::Int, g2::Int, inds::AbstractVector{<:Sigma}, vertices
 	h = norm(B - A) / 2
 	A = dim * V / h
 	A, h, V
-end
-
-function dict2(v)
-	pair = Dict()
-	for k in v
-			for i in k
-					for j in k
-							i >= j && continue
-							p = get!(pair, (i,j), [])
-							kk = filter(x->!in(x, [i,j]), k)
-							push!(p, kk)
-					end
-			end
-	end
-	pair
-end
-
-function dict1(v)
-	d = Dict()
-	for k in v
-		for i in k
-			p = get!(d, i, [])
-			push!(p, k)
-		end
-	end
-	d
 end
