@@ -5,9 +5,9 @@ using Sqra
 	@time Experiment(Setup())
 end
 
-@testset "Voronoi" begin
-	Sqra.Voronoi.tests()
-end
+#@testset "Voronoi" begin
+#	Sqra.Voronoi.tests()
+#end
 
 @testset "Error computation" begin
 	e1 = Sqra.Experiment(Setup())

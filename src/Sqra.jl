@@ -15,6 +15,7 @@ import IterativeSolvers
 using Random
 using JLD2
 using Memoize
+using VoronoiGraph
 
 #include("isokann.jl")
 #include("metasgd.jl")
@@ -39,9 +40,9 @@ include("sqra_core.jl")
 include("committor.jl")
 
 
-module Voronoi
-	include("voronoi/Voronoi.jl")
-end
+#module Voronoi
+#	include("voronoi/Voronoi.jl")
+#end
 
 # models and experiments
 #include("lennardjones.jl")

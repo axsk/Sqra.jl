@@ -10,8 +10,6 @@ end
 
 @with_kw struct SqraVoronoi
 	npick = 100
-	viter = npick * 100
-	vstuck = npick * 10
 	tmax = 10
 end
 
@@ -32,14 +30,13 @@ end
 
 function discretize(setup::Setup2{SqraVoronoi}, x, u)
 	npick = setup.discretization.npick
-	viter =	setup.discretization.viter
-	vstuck = setup.discretization.vstuck
 	tmax = setup.discretization.tmax
 	x, idxs, _ = picking(x, npick)
-	v, P = Voronoi.voronoi(x, viter; maxstuck = vstuck, tmax=tmax)
-	A, Vs = Voronoi.connectivity_matrix(v, P)
-	Q = sqra(u[idxs], A, beta(setup.model))
-	return (Q, x, ())
+	v, P = VoronoiGraph.voronoi(x, ;tmax=tmax)
+    Q = sqra_voronoi(u[idxs], beta(setup.model), v, P)
+	#A, Vs = connectivity_matrix(v, P)
+	#Q = sqra(u[idxs], A, beta(setup.model))
+	return (Q, x, (;v, P))
 end
 
 function discretize(setup::Setup2{SqraSparseBox}, x, u)
