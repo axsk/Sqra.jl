@@ -33,13 +33,9 @@ function VExperiment(setup::Setup; npick=100, viter=1000 * npick, vstuck=10*npic
 
 	x, u = eulermaruyama(x0, potential(model), sigma(model), dt, N,
 						 maxdelta = maxdelta, progressbar = progressbar)
-	x, idxs, _ = picking(x, npick)
-	v, P = VoronoiGraph.voronoi(x; tmax=10)
-	#A, Vs = VoronoiGraph.connectivity_matrix(v, P)
-	#idxs2 = findall(isfinite, vec(sum(A, dims=2)))
-	#Q = sqra(u[idxs], A, beta(model))
-    Q = sqra_voronoi(u[idxs], beta(model), v, P)
-	classes = classify(model, x)
+	xp, idxs, _ = picking(x, npick)
+    Q = sqra_voronoi(u[idxs], beta(model), xp)
+	classes = classify(model, xp)
 	cmt = committor(Q, classes, maxiter = solveriter)
 
 	d = @locals
@@ -190,12 +186,14 @@ function check_connected(A)
     return unconn
 end
 
-function sqra_voronoi(traj, us, npicks, beta, average_neighbors = 3*size(traj,2))
+#=
+function sqra_voronoi_threshold(traj, us, npicks, beta, average_neighbors = 3*size(traj,2))
 	inds, pdist = pick(traj, npicks) # also return picked indices
 	A = threshold_adjacency(pdist, average_neighbors)
 	Q = sqra(us[inds], A, beta)
 	return Q, inds
 end
+=#
 
 
 

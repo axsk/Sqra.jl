@@ -31,12 +31,9 @@ end
 function discretize(setup::Setup2{SqraVoronoi}, x, u)
 	npick = setup.discretization.npick
 	tmax = setup.discretization.tmax
-	x, idxs, _ = picking(x, npick)
-	v, P = VoronoiGraph.voronoi(x, ;tmax=tmax)
-    Q = sqra_voronoi(u[idxs], beta(setup.model), v, P)
-	#A, Vs = connectivity_matrix(v, P)
-	#Q = sqra(u[idxs], A, beta(setup.model))
-	return (Q, x, (;v, P))
+	xp, idxs, _ = picking(x, npick)
+    Q = sqra_voronoi(u[idxs], beta(setup.model), xp)
+	return (Q, xp, (;))
 end
 
 function discretize(setup::Setup2{SqraSparseBox}, x, u)

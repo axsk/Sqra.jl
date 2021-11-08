@@ -85,15 +85,25 @@ function test_compare()
 end
 =#
 
-function sqra_voronoi(u::Vector, beta::Real, v, P)
-    @assert length(u) == length(P)
-    C = connectivity_matrix(v, P)
+"""
+    sqra_voronoi(u, beta, xs; nmc=1000)
+Compute the voronoi diagram, approximate the volumes with `nmc` samples each and return the SQRA
+"""
+function sqra_voronoi(u, beta, xs; nmc=1000)
+    @assert length(u) == size(xs, 2)
+    v, P = VoronoiGraph.voronoi(xs)
+    A, V = VoronoiGraph.mc_volumes(v, P, nmc)
+    C = sqra_weights(A, V, P)
     return sqra(u, C, beta)
 end
 
-function connectivity_matrix(vertices, P::AbstractVector)
-    A, Vs = area_volume(vertices, P)
+"""
+    sqra_weights(A, Vs, P)
 
+Given the boundary areas, volumes and centers, compute the SQRA weight matrix C
+``C_ij = A_ij / (V_i * h_ij)``
+"""
+function sqra_weights(A, Vs, P)
     C = Diagonal(1 ./ Vs) * A
     divide_by_h!(C, P)
 
@@ -115,5 +125,4 @@ function divide_by_h!(A, P)
             A[i,j] /= norm(P[i] - P[j])
         end
     end
-
 end
