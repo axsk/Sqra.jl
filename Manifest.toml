@@ -965,7 +965,7 @@ version = "0.4.1"
 deps = ["LinearAlgebra", "NearestNeighbors", "Polyhedra", "ProgressMeter", "RecipesBase", "SparseArrays", "SpecialFunctions", "StaticArrays"]
 path = "../VoronoiGraph.jl"
 uuid = "e5f3e3e8-00d7-4f74-8011-648b521326aa"
-version = "0.1.1"
+version = "0.2.0"
 
 [[Wayland_jll]]
 deps = ["Artifacts", "Expat_jll", "JLLWrappers", "Libdl", "Libffi_jll", "Pkg", "XML2_jll"]

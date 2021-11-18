@@ -12,7 +12,7 @@ function error_voronoi_sb(x, sb::SparseBoxesDict, u1, u2)
 	n = 0
 	for (i, coord) in enumerate(eachcol(c))
 		j = findfirst(x->x==coord, k)
-		if j != nothing
+		if j !== nothing
 			err += sum(abs2, u1[i] - u2[j])
 			n += 1
 		end
