@@ -89,10 +89,14 @@ end
     sqra_voronoi(u, beta, xs; nmc=1000)
 Compute the voronoi diagram, approximate the volumes with `nmc` samples each and return the SQRA
 """
-function sqra_voronoi(u, beta, xs; nmc=1000)
+function sqra_voronoi(u, beta, xs; nmc=0)
     @assert length(u) == size(xs, 2)
     v, P = VoronoiGraph.voronoi(xs)
-    A, V = VoronoiGraph.mc_volumes(v, P, nmc)
+    if nmc > 0
+        A, V = VoronoiGraph.mc_volumes(v, P, nmc)
+    else
+        A, V = VoronoiGraph.volumes(v, P)
+    end
     C = sqra_weights(A, V, P)
     return sqra(u, C, beta)
 end
