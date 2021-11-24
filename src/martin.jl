@@ -118,7 +118,7 @@ function inverseproblem(;
     xlabel!("K") |> display
     =#
 
-    return (;merge(kwargs, Base.@locals)...)
+    return (;merge(kwargs, delete!(Base.@locals(), :kwargs))...)
 end
 
 errorstats(d) = errorstats(;d...)
@@ -134,7 +134,7 @@ function errorstats(;
 
 
     r, R = excentricity(v, P)
-    @show h = maximum(R)
+    h = maximum(R)
 
     Hs = H_Tk_sq(vs - us, A, ks, P)
     H = sqrt(sum(Hs[inner]))
@@ -152,7 +152,7 @@ function errorstats(;
     plot!(H[inner], label="H") |> display
     =#
 
-    return (;merge(kwargs, Base.@locals)...)
+    return (;merge(kwargs, delete!(Base.@locals(), :kwargs))...)
 end
 
 function excentricity(verts, P)
@@ -269,14 +269,37 @@ function batch(;D=4, m=5, ns=[100,200,400,800,1600,3200,6400,12800])
     ]
 end
 
+using ProgressMeter
+using Random
+using Dates
+
+@memoize PermaDict("cache/sim_") function experiment(n=n, D=D)
+    e = errorstats(inverseproblem(setup(N=n, D=D)))
+    return strip(e)
+end
+
 function pbatch(;D=4, m=5, ns=[100,200,400,800,1600,3200,6400,12800])
     res = [[] for i in 1:Threads.nthreads()]
-    ns = repeat(ns, inner=m)
+    restemp = []
+    ns = shuffle(repeat(ns, inner=m))
+    prog = Progress(sum(ns))
     #try
         Threads.@threads for n in ns
-            @show n
-            e = errorstats(inverseproblem(setup(N=n, D=D)))
-            Base.push!(res[Threads.threadid()], e)
+            local tm
+            try
+                tm = @elapsed e = errorstats(inverseproblem(setup(N=n, D=D)))
+                Base.push!(res[Threads.threadid()], e)
+                Base.push!(restemp, e)
+                if Threads.threadid() == 1
+
+                    #plot_h_i(restemp) |> display
+                end
+                println("finished n=$n - time=$(now()) - taken $tm - thread=$(Threads.threadid())")
+            catch e
+                @warn e
+                @show e
+            end
+            next!(prog, step=n)
         end
     #catch
     #end
@@ -294,8 +317,8 @@ function plot_h_i(b)
     for e in b
         scatter!(ih, [e.I], [e.H], marker_z=log10(e.N))
     end
-    mn, mx = extrema([e.I for e in bs])
-    yn, yx = [1, mx/mn] .* minimum(e.H for e in bs)
+    mn, mx = extrema(filter(!isnan,[e.I for e in b]))
+    yn, yx = [1, mx/mn] .* minimum(e.H for e in b)
     plot!(ih, [mn, mx], [yn, yx])
     yticks!([yn, yx])
     xticks!([mn, mx])
@@ -322,4 +345,15 @@ function plotbatch(b)
 
     l = @layout[a; b]
     plot(hi, nh, layout = l, size=(800,1000))
+end
+
+import JLD2
+
+strip(e) = Base.structdiff(e, NamedTuple{(:C, :Q, :QQ, :A, :v)})
+
+function save(b)
+    bb = map(b) do e
+        Base.structdiff(e, NamedTuple{(:C, :Q, :QQ, :A, :v)})
+    end
+    JLD2.save("batch$(length(b)).jld2", "b", bb)
 end
