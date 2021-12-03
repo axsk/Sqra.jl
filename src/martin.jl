@@ -272,10 +272,27 @@ end
 using ProgressMeter
 using Random
 using Dates
+using Memoize
 
-@memoize PermaDict("cache/sim_") function experiment(n=n, D=D)
+using Sqra: PermaDict
+using Random
+
+@memoize PermaDict("cache/martin_") function experiment(n=n, D=D, seed=1)
+    Random.seed!(seed)
     e = errorstats(inverseproblem(setup(N=n, D=D)))
     return strip(e)
+end
+
+
+
+using ThreadPools
+
+function qbatch(;D=4, seeds=1:5, ns=[100,200,400,800,1600,3200,6400,12800])
+    qmap((n, seed) for seed in seeds, n in reverse(ns)) do (n, seed)
+        tm = @elapsed e = experiment(n, D, seed)
+        println("finished n=$n - time=$(now()) - taken $tm - thread=$(Threads.threadid())")
+        return e
+    end
 end
 
 function pbatch(;D=4, m=5, ns=[100,200,400,800,1600,3200,6400,12800])
@@ -287,7 +304,8 @@ function pbatch(;D=4, m=5, ns=[100,200,400,800,1600,3200,6400,12800])
         Threads.@threads for n in ns
             local tm
             try
-                tm = @elapsed e = errorstats(inverseproblem(setup(N=n, D=D)))
+                #tm = @elapsed e = errorstats(inverseproblem(setup(N=n, D=D)))
+                tm = @elapsed e = run(n, D)
                 Base.push!(res[Threads.threadid()], e)
                 Base.push!(restemp, e)
                 if Threads.threadid() == 1
