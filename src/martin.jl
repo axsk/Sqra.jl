@@ -12,9 +12,8 @@ using LaTeXStrings
 
 p(x) = 2 * (x+1/2) * (1-x)^2
 
-
-uold(x) = abs(norm(x) - 1/2)^2 * (norm(x) < 1/2)
-u(x) = p(norm(x)*2) * (norm(x) < 1/2)
+#u(x) = p(norm(x)*2) * (norm(x) < 1/2)
+u(x) = p(norm(x)) * x[1] * (norm(x) < 1)
 #k(x) = exp(-norm(x)^(-alpha))
 k(x) = 1.
 f(y) = tr(jacobian(x->k(x) * gradient(u, x), y))  # f = ∇⋅(k∇u)
@@ -25,7 +24,7 @@ function setup(;
     alpha = 2,
     D = 2)
 
-    xs = [SVector{D}(randn(D)) for i in 1:N] / 4  # sample normally distributed
+    xs = [SVector{D}(randn(D)) for i in 1:N] / 2  # sample normally distributed
     xs = xs[sortperm(norm.(xs))]  # sort xs by radius
 
     ks = k.(xs)
@@ -291,6 +290,7 @@ function qbatch(;D=4, seeds=1:5, ns=[100,200,400,800,1600,3200,6400,12800])
     qmap((n, seed) for seed in seeds, n in reverse(ns)) do (n, seed)
         tm = @elapsed e = experiment(n, D, seed)
         println("finished n=$n - time=$(now()) - taken $tm - thread=$(Threads.threadid())")
+        flush(Base.stdout)
         return e
     end
 end
@@ -357,6 +357,19 @@ function plot_n_h(b)
     st
 end
 
+function plot_sqn_h(b)
+    st = plot()
+    xaxis!(L"n^{1/4}")
+    yaxis!(L"H_{\mathcal{T},\kappa}")
+    yaxis!(:log)
+    xaxis!(:log)
+    plot!(legend=false)
+    for e in b
+        scatter!(st, [e.N ^ (1/4)], [e.H])
+    end
+    st
+end
+
 function plotbatch(b)
     hi = plot_h_i(b)
     nh = plot_n_h(b)
@@ -374,4 +387,33 @@ function save(b)
         Base.structdiff(e, NamedTuple{(:C, :Q, :QQ, :A, :v)})
     end
     JLD2.save("batch$(length(b)).jld2", "b", bb)
+end
+
+function sample_normal(D,N)
+    xs = [SVector{D}(randn(D)) for i in 1:N] / 2
+end
+
+# sample uniform in [-1,1]^D
+function sample_uniform(D,N)
+    xs = [SVector{D}(rand(D)*2 .- 1) for i in 1:N]
+end
+
+function sample_reject(D,N,f)
+    xs = [SVector{D}(rand(D)*2 .- 1) for i in 1:N]
+    fs = f.(xs)
+    uni = rand(N)
+    while true
+        ratio = fs ./ maximum(fs)
+        acc = ratio .> uni
+        if sum(acc) >= N
+            length(acc), sum((acc))
+            return xs[acc][1:N]
+        else
+            M = ceil(Int, (N / sum(acc) - 1) * length(xs))
+            xsnew = [SVector{D}(rand(D)*2 .- 1) for i in 1:M]
+            append!(xs, xsnew)
+            append!(fs, f.(xsnew))
+            append!(uni, rand(M))
+        end
+    end
 end
