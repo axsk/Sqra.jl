@@ -19,13 +19,18 @@ k(x) = 1.
 f(y) = tr(jacobian(x->k(x) * gradient(u, x), y))  # f = ∇⋅(k∇u)
 hessu(y) = jacobian(x->gradient(u,x), y)
 
+
 function setup(;
     N = 200,
     alpha = 2,
-    D = 2)
+    D = 2,
+    xs = [SVector{D}(randn(D)) for i in 1:N] / 2)
 
-    xs = [SVector{D}(randn(D)) for i in 1:N] / 2  # sample normally distributed
-    xs = xs[sortperm(norm.(xs))]  # sort xs by radius
+    D = length(xs[1])
+    N = length(xs)
+
+    #xs = [SVector{D}(randn(D)) for i in 1:N] / 2  # sample normally distributed
+    #xs = xs[sortperm(norm.(xs))]  # sort xs by radius
 
     ks = k.(xs)
     fs = f.(xs)
@@ -64,14 +69,30 @@ end
 
 inverseproblem(d) = inverseproblem(;d...)
 
+function boundary(v, V)
+    B = zeros(Int, length(V))
+
+    # vertices outside unit circle
+    for (sig,v) in v
+        if norm(v) > 1
+            B[sig] .= 1
+        end
+    end
+
+    # cells with verts at infinity
+    B[findall(V .== Inf)] .= 1
+
+    return B
+end
+
 ## inverse problem: f, k |-> u
 function inverseproblem(;
     Q = nothing,
     xs = nothing,
     fs = nothing,
     us = nothing,
-    bndinner = 0,
-    bndouter = 1/2,
+    V = nothing,
+    v = nothing,
     kwargs...)
 
     # modified system with bnd conditions
@@ -79,10 +100,10 @@ function inverseproblem(;
     b = copy(fs)
     vs = copy(us)
 
-    inner = bndinner .<= norm.(xs) .<= bndouter
-
     # boundary condition
-    for i in findall(.!inner)
+    B = boundary(v, V)
+    inner = findall(B.==0)
+    for i in findall(B.==1)
     #for i in 1:length(xs)
     #    if !(bndinner < norm(xs[i]) < bndouter)
             QQ[i, :] .= 0
@@ -276,9 +297,11 @@ using Memoize
 using Sqra: PermaDict
 using Random
 
-@memoize PermaDict("cache/martin_") function experiment(n=n, D=D, seed=1)
+@memoize PermaDict("cache/martin_") function experiment(n=n, d=D, method=:uniform, seed=1)
     Random.seed!(seed)
-    e = errorstats(inverseproblem(setup(N=n, D=D)))
+    xs = sample(d,n,method)
+    e = errorstats(inverseproblem(setup(xs=xs)))
+    return e
     return strip(e)
 end
 
@@ -370,6 +393,14 @@ function plot_sqn_h(b)
     st
 end
 
+function plot_u(e::NamedTuple)
+    scatter(e.xs, marker_z=e.vs, xlims=[-1,1], ylims=(-1,1))
+end
+
+function plot_uv(e::NamedTuple)
+    scatter(e.xs, marker_z=e.us-e.vs, xlims=[-1,1], ylims=(-1,1))
+end
+
 function plotbatch(b)
     hi = plot_h_i(b)
     nh = plot_n_h(b)
@@ -416,4 +447,46 @@ function sample_reject(D,N,f)
             append!(uni, rand(M))
         end
     end
+end
+
+function sample(d, n, method)
+    if method == :normal
+        xs = sample_normal(d, n)
+    elseif method == :uniform
+        xs = sample_reject(d, n, x->1)
+    elseif method == :grad
+        xs = sample_reject(d, n, x->norm(gradient(u, x)))
+    elseif method == :hess
+        xs = sample_reject(d, n, x->norm(hessu(x)))
+    else
+        @show method
+        throw(Exception)
+    end
+    return xs
+end
+
+function scatter(xs::Vector{S}; kwargs...) where S <: SVector
+    scatter(collect(eachrow(reduce(hcat, xs)))...; kwargs...)
+end
+
+
+using Dash
+using DashHtmlComponents
+using DashCoreComponents
+
+function dashify(e)
+    X = reduce(hcat, e.xs)
+    p = PlotlyJS.plot(PlotlyJS.scatter(x=X[1,:],y=X[2,:],mode="markers", marker=attr(color=e.us)))
+    app = dash(external_stylesheets = ["https://codepen.io/chriddyp/pen/bWLwgP.css"])
+
+    app.layout = html_div() do
+            html_h1("Hello Dash"),
+            html_div("Dash.jl: Julia interface for Dash"),
+            dcc_graph(
+                id = "example-graph",
+                figure = p
+            )
+        end
+
+    run_server(app, "0.0.0.0", 8080)
 end
