@@ -1,6 +1,6 @@
 
 
-using Sqra
+using ..Sqra
 using IterativeSolvers
 using LinearAlgebra
 using ForwardDiff: jacobian, gradient
@@ -9,6 +9,9 @@ using StaticArrays
 using VoronoiGraph
 using SparseArrays
 using LaTeXStrings
+
+include("plots.jl")
+include("errors.jl")
 
 p(x) = 2 * (x+1/2) * (1-x)^2
 
@@ -113,7 +116,7 @@ function inverseproblem(;
     end
 
     # solve linear system
-    _, hist = IterativeSolvers.gmres!(vs, QQ, b; maxiter=100000, log=true)
+    _, hist = IterativeSolvers.gmres!(vs, QQ, b; maxiter=1000, log=true)
     !hist.isconverged && @warn "Solver did not converge"
 
     #@show norm(QQ * vs - b)
@@ -141,154 +144,6 @@ function inverseproblem(;
     return (;merge(kwargs, delete!(Base.@locals(), :kwargs))...)
 end
 
-errorstats(d) = errorstats(;d...)
-function errorstats(;
-    v=nothing, P=nothing,
-    A = nothing,
-    ks = nothing,
-    us = nothing,
-    vs = nothing,
-    inner = nothing,
-    kwargs...)
-
-
-
-    r, R = excentricity(v, P)
-    h = maximum(R)
-
-    Hs = H_Tk_sq(vs - us, A, ks, P)
-    H = sqrt(sum(Hs[inner]))
-    Is = I_2(v, P)
-    I = sqrt(sum(Is[inner]))
-
-    #=
-    plot(R./r, label = L"C_\rm{uni}")
-    title!("Voronoi regularity")
-    plot!(R, label="R")|>display
-    =#
-
-    #=
-    plot(I[inner], yaxis=:log, label="I2")
-    plot!(H[inner], label="H") |> display
-    =#
-
-    return (;merge(kwargs, delete!(Base.@locals(), :kwargs))...)
-end
-
-function excentricity(verts, P)
-    n = length(P)
-    r = fill(Inf, n)
-    R = zeros(n)
-
-    for (gens, coords) in verts
-        for g in gens
-            p = P[g]
-            d = norm(p - coords)
-            r[g] > d && (r[g] = d)
-            R[g] < d && (R[g] = d)
-        end
-    end
-
-    return r, R
-end
-
-#=
-""" ‖v‖²ₕₜₖ = ∑_σ m_σ h_σ k_σ |∂_σ v|²
- = Q_ij * π_i * m_i * beta """
-function H_Tk_sq_Q(vs, Q, vols, ks)
-    H = zeros(length(vs))
-    beta = 1
-    for (i,j,q) in spinds(Q)
-        H[i] += q * vols[i] * ks[i] * beta * (vs[i] - vs[j]) ^ 2
-    end
-    return H / 2
-end
-=#
-
-function H_Tk_sq(vs, areas, ks, P)
-    H = zeros(length(vs))
-    for (i,j,q) in spinds(areas)
-        i == j && continue
-        a = areas[i,j]
-        a == Inf && continue
-        H[i] += a / norm(P[i]-P[j]) * sqrt(ks[i]*ks[j]) * (vs[i] - vs[j]) ^ 2
-    end
-    return H / 2
-end
-
-H_Tk(e::NamedTuple) = sqrt(sum(H_Tk_sq((e.vs - e.us), e.A, e.ks, e.P)[e.inner]))
-
-using Continuables
-"""
-    spinds(A)
-like enumerate(A) but for sparse arrays, iterating (i,j,v) """
-function spinds(A)
-    c = @cont begin
-        rows = rowvals(A)
-        vals = nonzeros(A)
-        for j in 1:size(A, 2)
-            for r in nzrange(A, j)
-                i = rows[r]
-                v = vals[r]
-                cont((i, j, v))
-            end
-        end
-    end
-    return aschannel(c)
-end
-
-function I_2(verts, P, nmc=100, nmc2=10)
-    n = length(P)
-    d = length(P[1])
-
-    I = zeros(n)
-
-    r, R = excentricity(verts, P)
-
-    du = VoronoiGraph.mc_integrate(x -> sum(abs2, hessu(x)), verts, P, nmc, nmc2)[1]
-    neigh = VoronoiGraph.neighbors(verts)
-
-    for K in 1:length(P)
-        I[K] = R[K]^2 * (R[K]/r[K])^(d+1) * du[K] * length(neigh[K])
-    end
-
-    return I
-end
-
-I_2(e::NamedTuple) = sqrt(sum(I_2(e.v, e.P, 100, 10)[e.inner]))
-
-function hconvergence(D=4)
-    st = plot()
-    xaxis!(L"\# K")
-    yaxis!(L"\Vert u_\mathcal{T}-\mathcal{R}_{\mathcal{T}}u\Vert_{H_{\mathcal{T},\kappa}}")
-    yaxis!(:log)
-    xaxis!(:log)
-    plot!(legend=false)
-
-    ih = plot()
-    plot!(ih, legend=false)
-    yaxis!(L"I_2", :log)
-    xaxis!(L"H_{T,\kappa}",:log)
-    #xlims!((1e-5,1))
-    #ylims!((1e-5,50))
-
-    for j in [100,200,400,800,1600,3200,6400,12800], i in 1:5
-        e=errorstats(inverseproblem(setup(N=j, D=D)))
-        scatter!(ih, [e.H], [e.I], color=Int(log2(j/100))) |> display
-        @show e.I, e.H
-        scatter!(st, [e.N], [e.H]) |> display
-    end
-
-    return st
-end
-
-function batch(;D=4, m=5, ns=[100,200,400,800,1600,3200,6400,12800])
-    [
-        errorstats(inverseproblem(setup(N=n, D=D)))
-        for j in 1:m, n in ns
-    ]
-end
-
 using ProgressMeter
 using Random
 using Dates
@@ -301,19 +156,56 @@ using Random
     Random.seed!(seed)
     xs = sample(d,n,method)
     e = errorstats(inverseproblem(setup(xs=xs)))
-    return e
+    e = (;method, e...)
+#   return e
     return strip(e)
 end
 
 
 
 using ThreadPools
-
+#=
 function qbatch(;D=4, seeds=1:5, ns=[100,200,400,800,1600,3200,6400,12800])
+    prog = Progress(sum(ns)*length(seeds))
     qmap((n, seed) for seed in seeds, n in reverse(ns)) do (n, seed)
         tm = @elapsed e = experiment(n, D, seed)
         println("finished n=$n - time=$(now()) - taken $tm - thread=$(Threads.threadid())")
         flush(Base.stdout)
+        next!(prog, step=n)
+        return e
+    end
+end
+=#
+
+function smallbatch()
+    qbatch(D=4, seeds=1:2, ns=[4000,2000,1000])
+end
+
+
+bigbatch() = qbatch(; D=4, seeds=1:5, ns=reverse([100,200,400,800,1600,3200,6400,12800,25_000,50_000,100_000]))
+
+function qbatch(;D=4, seeds=1:5, ns=[100,200,400,800,1600,3200,6400,12800], methods=[:uniform, :normal, :grad, :hess])
+    setups = [(;n, D, method, seed) for seed in seeds, method in methods, n in ns]
+    qbatch(setups)
+end
+
+function qbatch(setups)
+    prog = Progress(sum(s.n for s in setups))
+    qmap(setups) do s
+        #@show s
+        n, d, method, seed = s.n, s.D, s.method, s.seed
+        local e
+        try
+            tm = @elapsed e = experiment(n, d, method, seed)
+        catch err
+            @warn "error in experiment"
+            @show n,d,method,seed,err
+            e = err
+        end
+        #println("finished n=$n - time=$(now()) - taken $tm - thread=$(Threads.threadid())")
+        #flush(Base.stdout)
+        next!(prog, step=n)
+        #flush(Base.stdout)
         return e
     end
 end
@@ -348,7 +240,6 @@ function pbatch(;D=4, m=5, ns=[100,200,400,800,1600,3200,6400,12800])
     reduce(vcat, res)
 end
 
-bigbatch() = pbatch(D=4, m=10, ns=[100,200,400,800,1600,3200,6400,12800,25_000,100_000])
 
 import JLD2
 
@@ -389,10 +280,11 @@ function sample_reject(D,N,f)
 end
 
 function sample(d, n, method)
+    sigmasq = 1/2^2
     if method == :normal
-        xs = sample_normal(d, n)
+        xs = sample_reject(d, n, x->(sum(abs2, x)<1) * exp(-sum(abs2,x)/2/sigmasq))
     elseif method == :uniform
-        xs = sample_reject(d, n, x->1)
+        xs = sample_reject(d, n, x->sum(abs2, x)<1)
     elseif method == :grad
         xs = sample_reject(d, n, x->norm(gradient(u, x)))
     elseif method == :hess
@@ -402,30 +294,4 @@ function sample(d, n, method)
         throw(Exception)
     end
     return xs
-end
-
-function scatter(xs::Vector{S}; kwargs...) where S <: SVector
-    scatter(collect(eachrow(reduce(hcat, xs)))...; kwargs...)
-end
-
-
-using Dash
-using DashHtmlComponents
-using DashCoreComponents
-
-function dashify(e)
-    X = reduce(hcat, e.xs)
-    p = PlotlyJS.plot(PlotlyJS.scatter(x=X[1,:],y=X[2,:],mode="markers", marker=attr(color=e.us)))
-    app = dash(external_stylesheets = ["https://codepen.io/chriddyp/pen/bWLwgP.css"])
-
-    app.layout = html_div() do
-            html_h1("Hello Dash"),
-            html_div("Dash.jl: Julia interface for Dash"),
-            dcc_graph(
-                id = "example-graph",
-                figure = p
-            )
-        end
-
-    run_server(app, "0.0.0.0", 8080)
 end
