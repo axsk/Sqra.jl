@@ -17,17 +17,8 @@ function errorstats(;
     Is = I_2(v, P)
     I = sqrt(sum(Is[inner]))
     L = L_2(v,P,vs)
+    LL = sqrt(sum(L[inner])) ## TODO: change names to Ls, L. Kept for compatibility
 
-    #=
-    plot(R./r, label = L"C_\rm{uni}")
-    title!("Voronoi regularity")
-    plot!(R, label="R")|>display
-    =#
-
-    #=
-    plot(I[inner], yaxis=:log, label="I2")
-    plot!(H[inner], label="H") |> display
-    =#
 
     return (;merge(kwargs, delete!(Base.@locals(), :kwargs))...)
 end
@@ -119,6 +110,6 @@ L_2(e::NamedTuple) = sqrt(sum(L_2(e.v, e.P, e.us, 100, 10)[e.inner]))
 
 function L_2(verts, P, us, nmc=100, nmc2=10)
     kernel(x, i) = abs2(u(x) - us[i])
-    ks = VoronoiGraph.mc_integrate_i(kernel, verts, P, nmc, nmc2)[1]
-    return ks
+    L = VoronoiGraph.mc_integrate_i(kernel, verts, P, nmc, nmc2)[1]
+    return L
 end

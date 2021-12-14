@@ -15,8 +15,9 @@ include("errors.jl")
 
 p(x) = 2 * (x+1/2) * (1-x)^2
 
-#u(x) = p(norm(x)*2) * (norm(x) < 1/2)
-u(x) = p(norm(x)) * x[1] * (norm(x) < 1)
+#u(x) = p(norm(x)*2) * (norm(x) < 1/2)  # isotropic on -1/2, 1/2, the old one
+u(x) = p(norm(x)) * x[1] * (norm(x) < 1)  # anisotropic on -1, 1
+#u(x) = p(norm(x)) * (norm(x) < 1)  # isotropic on -1, 1
 #k(x) = exp(-norm(x)^(-alpha))
 k(x) = 1.
 f(y) = tr(jacobian(x->k(x) * gradient(u, x), y))  # f = ∇⋅(k∇u)
@@ -73,7 +74,7 @@ end
 inverseproblem(d) = inverseproblem(;d...)
 
 function boundary(v, V)
-    B = zeros(Int, length(V))
+    B = zeros(Bool, length(V))
 
     # vertices outside unit circle
     for (sig,v) in v

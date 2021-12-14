@@ -79,8 +79,8 @@ function plot_u(e::NamedTuple; kwargs...)
     scatter(e.xs, marker_z=e.us, xlims=[-1,1], ylims=(-1,1); kwargs...)
 end
 
-function plot_uv(e::NamedTuple)
-    scatter(e.xs, marker_z=e.us-e.vs, xlims=[-1,1], ylims=(-1,1))
+function plot_uv(e::NamedTuple; kwargs...)
+    scatter(e.xs, marker_z=e.us-e.vs, xlims=[-1,1], ylims=(-1,1); kwargs...)
 end
 
 function plotbatch(b)
