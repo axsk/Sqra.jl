@@ -10,11 +10,13 @@ function plot_h_i(b; kwargs...)
     xaxis!(L"I_2", :log)
     yaxis!(L"H_{T,\kappa}",:log)
     for e in b
-        scatter!(ih, [e.I], [e.H], marker_z=log10(e.N), marker=methodmarker[e.method],
+        marker = get(methodmarker, e.method, :x)
+        scatter!(ih, [e.I], [e.H], marker_z=log10(e.N), marker=marker,
         group = [e.method], label=nothing; kwargs...)
     end
     for e in b[1,:,end]
-        scatter!(ih, [e.I], [e.H], marker_z=log10(e.N), marker=methodmarker[e.method],
+        marker = get(methodmarker, e.method, :x)
+        scatter!(ih, [e.I], [e.H], marker_z=log10(e.N), marker=marker,
         group = [e.method], label=String(e.method); kwargs...)
     end
     mn, mx = extrema(filter(!isnan,[e.I for e in b]))

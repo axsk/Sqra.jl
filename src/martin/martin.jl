@@ -15,8 +15,8 @@ include("errors.jl")
 
 p(x) = 2 * (x+1/2) * (1-x)^2
 
-#u(x) = p(norm(x)*2) * (norm(x) < 1/2)  # isotropic on -1/2, 1/2, the old one
-u(x) = p(norm(x)) * x[1] * (norm(x) < 1)  # anisotropic on -1, 1
+u(x) = p(norm(x)*2) * (norm(x) < 1/2)  # isotropic on -1/2, 1/2, the old one
+#u(x) = p(norm(x)) * x[1] * (norm(x) < 1)  # anisotropic on -1, 1
 #u(x) = p(norm(x)) * (norm(x) < 1)  # isotropic on -1, 1
 #k(x) = exp(-norm(x)^(-alpha))
 k(x) = 1.
@@ -78,7 +78,7 @@ function boundary(v, V)
 
     # vertices outside unit circle
     for (sig,v) in v
-        if norm(v) > 1
+        if norm(v) > 1/2
             B[sig] .= 1
         end
     end
@@ -88,6 +88,11 @@ function boundary(v, V)
 
     return B
 end
+
+function boundary_legacy(xs)
+    norm.(xs) .> 0.5
+end
+
 
 ## inverse problem: f, k |-> u
 function inverseproblem(;
@@ -105,7 +110,9 @@ function inverseproblem(;
     vs = copy(us)
 
     # boundary condition
-    B = boundary(v, V)
+    #B = boundary(v, V)
+    B = boundary_legacy(xs)
+
     inner = findall(B.==0)
     for i in findall(B.==1)
     #for i in 1:length(xs)
@@ -121,26 +128,6 @@ function inverseproblem(;
     !hist.isconverged && @warn "Solver did not converge"
 
     #@show norm(QQ * vs - b)
-
-    #plot(us)
-    #plot!(vs)
-
-    step = cld(length(us), 500)
-    X = map(x->x[1], xs)
-    Y = map(x->x[2], xs)
-    #=
-    scatter(X[1:step:end], Y[1:step:end], marker_z=(vs-us)[1:step:end])
-    =#
-
-    #@show norm((us-vs) / length(us))
-
-    #=
-
-    plot((us), labels=L"R_T u");
-    plot!((vs), label=L"u_T")
-    title!("reconstruction error")
-    xlabel!("K") |> display
-    =#
 
     return (;merge(kwargs, delete!(Base.@locals(), :kwargs))...)
 end
@@ -179,7 +166,7 @@ end
 =#
 
 function smallbatch()
-    qbatch(D=4, seeds=1:2, ns=[4000,2000,1000])
+    qbatch(D=4, seeds=1:2, ns=[8000,4000,2000,1000], methods=[:legacy])
 end
 
 
@@ -290,6 +277,8 @@ function sample(d, n, method)
         xs = sample_reject(d, n, x->norm(gradient(u, x)))
     elseif method == :hess
         xs = sample_reject(d, n, x->norm(hessu(x)))
+    elseif method == :legacy
+        xs = [SVector{d}(randn(d)) for i in 1:n] / 4
     else
         @show method
         throw(Exception)
