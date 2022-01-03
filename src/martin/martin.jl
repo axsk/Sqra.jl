@@ -15,8 +15,8 @@ include("errors.jl")
 
 p(x) = 2 * (x+1/2) * (1-x)^2
 
-u(x) = p(norm(x)*2) * (norm(x) < 1/2)  # isotropic on -1/2, 1/2, the old one
-#u(x) = p(norm(x)) * x[1] * (norm(x) < 1)  # anisotropic on -1, 1
+#u(x) = p(norm(x)*2) * (norm(x) < 1/2)  # isotropic on -1/2, 1/2, the old one
+u(x) = p(norm(x)) * x[1] * (norm(x) < 1)  # anisotropic on -1, 1
 #u(x) = p(norm(x)) * (norm(x) < 1)  # isotropic on -1, 1
 #k(x) = exp(-norm(x)^(-alpha))
 k(x) = 1.
@@ -78,7 +78,7 @@ function boundary(v, V)
 
     # vertices outside unit circle
     for (sig,v) in v
-        if norm(v) > 1/2
+        if norm(v) > 1
             B[sig] .= 1
         end
     end
@@ -90,7 +90,7 @@ function boundary(v, V)
 end
 
 function boundary_legacy(xs)
-    norm.(xs) .> 0.5
+    norm.(xs) .> 1
 end
 
 
@@ -102,6 +102,7 @@ function inverseproblem(;
     us = nothing,
     V = nothing,
     v = nothing,
+    boundarymethod = :center,
     kwargs...)
 
     # modified system with bnd conditions
@@ -110,17 +111,17 @@ function inverseproblem(;
     vs = copy(us)
 
     # boundary condition
-    #B = boundary(v, V)
-    B = boundary_legacy(xs)
+    if boundarymethod == :center
+        B = boundary_legacy(xs)
+    elseif boundarymethod == :intersect
+        B = boundary(v, V)
+    end
 
     inner = findall(B.==0)
     for i in findall(B.==1)
-    #for i in 1:length(xs)
-    #    if !(bndinner < norm(xs[i]) < bndouter)
             QQ[i, :] .= 0
             QQ[i, i] = 1
             b[i] = us[i]
-    #    end
     end
 
     # solve linear system
@@ -143,7 +144,14 @@ using Random
 @memoize PermaDict("cache/martin_") function experiment(n=n, d=D, method=:uniform, seed=1)
     Random.seed!(seed)
     xs = sample(d,n,method)
-    e = errorstats(inverseproblem(setup(xs=xs)))
+    if method in [:uniform, :normal, :legacy]
+        boundary = :center
+    elseif method in [:grad, :hess]
+        boundary = :intersect
+    else
+        throw(ArgumentError("invalid sampling method"))
+    end
+    e = errorstats(inverseproblem(;boundarymethod=boundary, setup(xs=xs)...))
     e = (;method, e...)
 #   return e
     return strip(e)
@@ -152,18 +160,7 @@ end
 
 
 using ThreadPools
-#=
-function qbatch(;D=4, seeds=1:5, ns=[100,200,400,800,1600,3200,6400,12800])
-    prog = Progress(sum(ns)*length(seeds))
-    qmap((n, seed) for seed in seeds, n in reverse(ns)) do (n, seed)
-        tm = @elapsed e = experiment(n, D, seed)
-        println("finished n=$n - time=$(now()) - taken $tm - thread=$(Threads.threadid())")
-        flush(Base.stdout)
-        next!(prog, step=n)
-        return e
-    end
-end
-=#
+
 
 function smallbatch()
     qbatch(D=4, seeds=1:2, ns=[8000,4000,2000,1000], methods=[:legacy])
@@ -198,37 +195,6 @@ function qbatch(setups)
     end
 end
 
-function pbatch(;D=4, m=5, ns=[100,200,400,800,1600,3200,6400,12800])
-    res = [[] for i in 1:Threads.nthreads()]
-    restemp = []
-    ns = shuffle(repeat(ns, inner=m))
-    prog = Progress(sum(ns))
-    #try
-        Threads.@threads for n in ns
-            local tm
-            try
-                #tm = @elapsed e = errorstats(inverseproblem(setup(N=n, D=D)))
-                tm = @elapsed e = run(n, D)
-                Base.push!(res[Threads.threadid()], e)
-                Base.push!(restemp, e)
-                if Threads.threadid() == 1
-
-                    #plot_h_i(restemp) |> display
-                end
-                println("finished n=$n - time=$(now()) - taken $tm - thread=$(Threads.threadid())")
-            catch e
-                @warn e
-                @show e
-            end
-            next!(prog, step=n)
-        end
-    #catch
-    #end
-    @show length.(res)
-    reduce(vcat, res)
-end
-
-
 import JLD2
 
 strip(e) = Base.structdiff(e, NamedTuple{(:C, :Q, :QQ, :A, :v)})
@@ -247,8 +213,10 @@ function sample_uniform(D,N)
     xs = [SVector{D}(rand(D)*2 .- 1) for i in 1:N]
 end
 
-function sample_reject(D,N,f)
-    xs = [SVector{D}(rand(D)*2 .- 1) for i in 1:N]
+
+
+function sample_reject(D,N,f, radius=1.5)
+    xs = [SVector{D}((rand(D)*2 .- 1)*radius) for i in 1:N]
     fs = f.(xs)
     uni = rand(N)
     while true
@@ -259,7 +227,7 @@ function sample_reject(D,N,f)
             return xs[acc][1:N]
         else
             M = ceil(Int, (N / sum(acc) - 1) * length(xs))
-            xsnew = [SVector{D}(rand(D)*2 .- 1) for i in 1:M]
+            xsnew = [SVector{D}((rand(D)*2 .- 1)*radius) for i in 1:M]
             append!(xs, xsnew)
             append!(fs, f.(xsnew))
             append!(uni, rand(M))
@@ -267,21 +235,31 @@ function sample_reject(D,N,f)
     end
 end
 
+using LinearAlgebra
+
 function sample(d, n, method)
-    sigmasq = 1/2^2
+    sigma = 1/2
+    radius = 1.5
     if method == :normal
-        xs = sample_reject(d, n, x->(sum(abs2, x)<1) * exp(-sum(abs2,x)/2/sigmasq))
+        xs = sample_reject(d, n, x->(norm(x)<radius) * exp(-sum(abs2,x)/(2 * (sigma^2))))
     elseif method == :uniform
-        xs = sample_reject(d, n, x->sum(abs2, x)<1)
+        xs = sample_reject(d, n, x->(norm(x)<radius))
     elseif method == :grad
         xs = sample_reject(d, n, x->norm(gradient(u, x)))
     elseif method == :hess
         xs = sample_reject(d, n, x->norm(hessu(x)))
     elseif method == :legacy
-        xs = [SVector{d}(randn(d)) for i in 1:n] / 4
+        xs = [SVector{d}(randn(d) * sigma) for i in 1:n]
     else
         @show method
         throw(Exception)
     end
     return xs
+end
+
+function run()
+    #b = qbatch(D=4, seeds=[1], ns=[8000,4000,2000,1000], methods=[:uniform, :normal, :legacy, :grad, :hess])
+    b = qbatch(D=4, seeds=[1], ns=[8000,4000,2000,1000], methods=[:uniform, :normal, :legacy])
+    p = plot_h_i(b) |> display
+    (;b,p)
 end
