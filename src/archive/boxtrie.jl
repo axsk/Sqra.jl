@@ -1,3 +1,6 @@
+# Another attempt at writing a trie,
+# see trie.jl
+
 struct Tree
     depth
     width

@@ -9,7 +9,7 @@ function plot_h_i(b; kwargs...)
     ih = plot()
     #plot!(ih, legend=false)
     xaxis!(L"B", :log)
-    yaxis!(L"H_{T,\kappa}",:log)
+    yaxis!(L"H",:log)
     for e in b
         marker = get(methodmarker, e.method, :x)
         nin = length(e.inner)
@@ -95,9 +95,9 @@ end
     N, H
 end
 
-function samplingplot(n=300; kwargs...)
+function samplingplot(n=300; seed=1, kwargs...)
     for method in [:uniform, :legacy, :grad, :hess]
-        e = experiment(n, 2, method, 1)
+        e = experiment(n, 2, method, seed)
         label = get(methodlabels, method, String(method))
         p = plot_u(e, title=label, legend=false; kwargs...) |> display
 
@@ -107,9 +107,9 @@ end
 
 
 function paperplots(b=qbatch(D=4, seeds=1:2, ns=[128000, 64000,32000,16000,8000,4000,2000,1000], methods=[:legacy, :uniform, :normal, :grad, :hess]))
-    plot_h_i(b[1:1,[1,2,4,5],1:7])
-    xticks!([10^.98, 10^1.95])
-    yticks!([10^-.7, 10^-1.67])
+    plot_h_i(b[1:1,[1,2,4,5],1:7]);
+    xticks!([10^.98, 10^1.95]);
+    yticks!([10^-.7, 10^-1.67]);
     plot!() |> display
     savefig("ih.pdf")
 

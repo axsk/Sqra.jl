@@ -1,3 +1,4 @@
+# testing nested gradient computation with zygote
 # testing different combinations of gradient nesting
 
 import Zygote, ForwardDiff, Flux
@@ -42,6 +43,3 @@ function model_f(p)
     ForwardDiff.jacobian(fx, x)
     sum(abs2, df, dims=1)
 end
-
-
-

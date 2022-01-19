@@ -1,3 +1,14 @@
+# ISOKANN implementation
+# learning the chi function from trajectory data
+# (a) by the classical power iteration
+# (b) by minimizing the fixed point residual
+#
+# For (a) we allow manually setting the number of learning / power-iteration steps
+# (and suggest that rapid mixing is advantageous)
+#
+# We compare different learning mechanisms (ADAM, Nesterov)
+# But the data is only pure diffusion so far
+
 using Flux
 using Flux.Optimise: update!
 using Statistics

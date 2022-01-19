@@ -1,3 +1,5 @@
+# my own take on learning the learning rate
+
 using Zygote
 
 loss(t,d) = sum((t .- d).^2) / length(d)

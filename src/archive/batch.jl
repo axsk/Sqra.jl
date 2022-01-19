@@ -1,4 +1,5 @@
-
+# batch script running multiple simulations/SbBoxDiscretizations in parallel
+# using the permadict Memoization
 
 export run, run_parallel, Simulation, SpBoxDiscretisation, discretize, committor
 

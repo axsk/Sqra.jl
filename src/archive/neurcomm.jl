@@ -1,3 +1,19 @@
+# Experimental approximation of the committor function with a neural network
+
+# implements:
+# - varioous fixtures for evaluation at the boundary of A/B
+#   - CustomCrisp: with a custom function for checking the boundary
+#   - RadialCrisp: for radial sets A/B around given points
+#   - RadialExp: smoothed version necessary for computation with variational approach
+# - loss functions for the committor solution
+#   - CommittorSQRA: using a stencil + SQRA for approx. of the Koopman op.
+#   - CommittorSampled: using trajectory MC for approx. of the Koopman op
+#   - CommittorVariational: uses the variational formulation with autodiff from
+#       2018, Khoo, Lu, Ying - Solving for high dimensional committor ...
+#       2019 - Li, Lin, Ren - Computing Committor Functions ...
+# - training of an mlp
+# - visualization (with pointwise loss scatter plot)
+# - mullerbrwon and langevin potential
 module NN
 
 using Flux

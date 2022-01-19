@@ -1,3 +1,9 @@
+# Somewhat stable implementation of "Sparse Boxes"
+#
+# i.e. a sparse regular grid with `ncells` partitions in each dimension
+# constructed from a list of points (in the form of a matrix)
+# Also implements the adjacency for this matrix.
+
 using Distances
 using SparseArrays
 using ProgressMeter

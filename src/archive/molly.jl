@@ -1,3 +1,6 @@
+# experimental use of Molly.jl
+# as far as i remember this did not work
+
 using Molly
 
 timestep = 0.00005 # ps

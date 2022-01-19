@@ -1,3 +1,9 @@
+# Experimental implementation of a Trie / Prefix Triplewell
+#
+# I wanted to use this for storing the sparse boxes,
+# after realizing it is the data-structure I tried to emulate with
+# sbmatrix before.
+
 struct Node
     val::Union{Dict{Int, Node}, Vector{Int}}
 

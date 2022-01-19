@@ -1,3 +1,5 @@
+# first take at implementation of the lennard jones cluster
+
 export Simulation, run
 
 @with_kw struct Simulation
