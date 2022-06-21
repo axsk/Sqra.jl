@@ -263,3 +263,5 @@ function run()
     p = plot_h_i(b) |> display
     (;b,p)
 end
+
+precompile(run, ())
